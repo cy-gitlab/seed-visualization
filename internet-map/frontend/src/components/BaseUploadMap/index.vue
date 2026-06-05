@@ -33,6 +33,8 @@ type OtherConfigOf<T> =
                 never;
 
 interface Props<M extends typeof MapUi | typeof IXMapUi | typeof TransitMapUi> {
+  initialMapData?: any;
+  onParsedMap?: (value: any, mapUi: MapUi | IXMapUi | TransitMapUi) => Promise<'default' | 'all' | 'manual' | 'skip'> | 'default' | 'all' | 'manual' | 'skip';
   settingNumItem?: PropType<Component>
   mapUiClass: M;
   dataSourceClass:
@@ -268,6 +270,9 @@ const searchInput = () => {
   if (!mapUi.value) return
   mapUi.value?.updateFilterSuggestions(inputSearch.value)
 }
+const waitForBrowserPaint = () => new Promise<void>((resolve) => {
+  requestAnimationFrame(() => setTimeout(resolve, 0))
+})
 const onIxBlur = async () => {
   if (ruleForm.ixValue.length === 0 || arraysEqualUnordered(ruleForm.ixValue, ruleForm._ixValue)) {
     return
@@ -305,6 +310,7 @@ const partStartMapUi = async () => {
 }
 
 watch(() => mapData.value, async (value) => {
+  if (!value || !mapUi.value) return
   mapUi.value?.setVisData(value)
   const IXs = mapUi.value?.getIxs() || []
   ixOptions.value = IXs.map(ix => {
@@ -322,6 +328,38 @@ watch(() => mapData.value, async (value) => {
     }
   })
   ruleForm.transitNum = transits.length
+
+  if (props.onParsedMap) {
+    const action = await props.onParsedMap(value, mapUi.value)
+    if (action === 'all') {
+      const loading = (mapUi.value as any)?.allLoadingInstance ?? allLoading()
+      let handedOffToVis = false
+      try {
+        ;(mapUi.value as any)?.setAllLoadingInstance?.(loading)
+        await nextTick()
+        await waitForBrowserPaint()
+        await mapUi.value?.start()
+        loading.setText('Preparing vis layout...')
+        handedOffToVis = true
+      } finally {
+        if (!handedOffToVis) {
+          loading.close()
+        }
+      }
+      return
+    }
+    if (action === 'manual') {
+      ElMessage({
+        type: 'info',
+        message: 'Please select the options to be displayed in the "Settings -> Categories" section.',
+      });
+      return
+    }
+    if (action === 'skip') {
+      return
+    }
+  }
+
   await ElMessageBox.confirm(
       'Do you want to display all the nodes of the Internet Map?',
       'Notice',
@@ -361,7 +399,7 @@ watch(() => mapData.value, async (value) => {
         },
       }
   );
-})
+}, { immediate: false })
 
 onMounted(() => {
   nextTick(async () => {
@@ -400,6 +438,9 @@ onMounted(() => {
       replayStatusInfo: replayState.replayStatus,
     }
     mapUi.value = new props.mapUiClass(config, props.otherConfig);
+    if (props.initialMapData) {
+      mapData.value = props.initialMapData
+    }
   })
 })
 defineExpose({mapUi})
@@ -695,15 +736,6 @@ defineExpose({mapUi})
 @use '@/style/common/window-manager.css' as *;
 @use '@/style/map/map.css' as *;
 
-.input-tabs {
-  padding: 10px;
-
-  .submit {
-    background: rgb(203 216 235);
-    color: blue;
-  }
-}
-
 .el-slider {
   margin-left: 10px;
   width: 95%;
@@ -758,3 +790,5 @@ defineExpose({mapUi})
   top: 20px;
 }
 </style>
+
+

@@ -37,6 +37,8 @@ export interface EmulatorNetwork {
             prefix: string,
             description?: string,
             displayname?: string,
+            lat?: number,
+            lon?: number
         },
         relation?: {
             parent: Set<string>,

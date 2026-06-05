@@ -1,11 +1,47 @@
-import path from 'path'
+import path from 'node:path'
 import vue from '@vitejs/plugin-vue'
-import {loadEnv, defineConfig} from 'vite'
+import cesium from 'vite-plugin-cesium'
+import {loadEnv, defineConfig, type PluginOption} from 'vite'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import {ElementPlusResolver} from 'unplugin-vue-components/resolvers'
 
 const envDir = 'env'
+
+function readNumberEnv(value: string | undefined, fallback: number) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function trimTrailingSlash(value: string) {
+    return value.replace(/\/+$/, '')
+}
+
+function normalizeBase(base: string | undefined) {
+    if (!base || base === '/') return ''
+    return `/${trimTrailingSlash(base).replace(/^\/+/, '')}`
+}
+
+function createCesiumBuildBasePlugin(env: Record<string, string>): PluginOption {
+    const base = normalizeBase(env.VITE_BUILD_ASSET_PREFIX)
+    let isBuild = false
+
+    return {
+        name: 'cesium-build-base',
+        enforce: 'post',
+        config(_, {command}) {
+            isBuild = command === 'build'
+        },
+        transformIndexHtml(html) {
+            if (!isBuild || !base) {
+                return html
+            }
+
+            return html.replaceAll('"/cesium/', `"${base}/cesium/`)
+        },
+    }
+}
+
 export default defineConfig(({mode}) => {
     const env = loadEnv(mode, envDir)
     return {
@@ -14,6 +50,10 @@ export default defineConfig(({mode}) => {
         envDir: envDir,
         plugins: [
             vue(),
+            cesium({
+                cesiumBaseUrl: '../cesium',
+            }),
+            createCesiumBuildBasePlugin(env),
             Components({
                 resolvers: [ElementPlusResolver()],
             }),
@@ -38,7 +78,7 @@ export default defineConfig(({mode}) => {
         server: {
             cors: true,
             strictPort: true,
-            port: Number(env.VITE_FRONTEND_PORT) || 5173,
+            port: readNumberEnv(env.VITE_FRONTEND_PORT, 5173),
             open: env.VITE_FRONTEND_OPEN === 'true',
             host: env.VITE_FRONTEND_HOST,
             proxy: {
@@ -47,10 +87,18 @@ export default defineConfig(({mode}) => {
                     changeOrigin: true,
                     // rewrite: (path) => path.replace(new RegExp(env.VITE_APP_BASE_URL), ''),
                 },
+                '/satellite-tiles': {
+                    target: env.VITE_SATELLITE_TILES_PROXY_ADDRESS,
+                    changeOrigin: true,
+                },
             },
         },
+        preview: {
+            host: env.VITE_PREVIEW_HOST || env.VITE_FRONTEND_HOST || '127.0.0.1',
+            port: readNumberEnv(env.VITE_PREVIEW_PORT, 6173),
+        },
         build: {
-            outDir: env.VITE_BUILD_OUTPUT_PATH,
+            outDir: env.VITE_BUILD_OUTPUT_PATH || 'dist',
             assetsDir: 'assets',
             rollupOptions: {
                 output: {

@@ -9,6 +9,185 @@ export interface UploadMapUiOtherConfiguration {
 
 }
 
+function edgeKey(from: string, to: string): string {
+    return from < to ? `${from}\u0000${to}` : `${to}\u0000${from}`;
+}
+
+export function filterGraphByIXData(nodes: Vertex[], edges: Edge[], selectedStarLabels: string[]): { filteredNodes: Vertex[]; filteredEdges: Edge[] } {
+    if (selectedStarLabels.length === 0) {
+        return {
+            filteredNodes: [],
+            filteredEdges: [],
+        };
+    }
+
+    const nodeMap = new Map<string, Vertex>();
+    nodes.forEach(node => nodeMap.set(node.id, node));
+
+    const selectedStarIds = new Set<string>();
+    const selectedStarLabelsSet = new Set(selectedStarLabels);
+
+    const allStarIds = new Set<string>();
+
+    nodes.forEach(node => {
+        if (node.shape === 'star') {
+            allStarIds.add(node.id);
+            const starName = node.object?.meta?.emulatorInfo?.name;
+            if (starName && selectedStarLabelsSet.has(starName)) {
+                selectedStarIds.add(node.id);
+            }
+        }
+    });
+
+    const adjacencyList = new Map<string, Set<string>>();
+    nodes.forEach(node => adjacencyList.set(node.id, new Set()));
+    edges.forEach(edge => {
+        adjacencyList.get(edge.from)?.add(edge.to);
+        adjacencyList.get(edge.to)?.add(edge.from);
+    });
+
+    const nodesToKeep = new Set<string>(selectedStarIds);
+    const edgesToKeep = new Set<string>();
+    const directlyConnectedStars = new Set<string>();
+
+    selectedStarIds.forEach(starId => {
+        const queue: { nodeId: string; path: string[]; fromStar: string }[] = [
+            {nodeId: starId, path: [starId], fromStar: starId}
+        ];
+
+        const visited = new Set<string>([starId]);
+
+        while (queue.length > 0) {
+            const {nodeId, path, fromStar} = queue.shift()!;
+            const neighbors = adjacencyList.get(nodeId) || new Set();
+
+            for (const neighborId of neighbors) {
+                if (path.includes(neighborId)) continue;
+
+                const isStar = allStarIds.has(neighborId);
+                const neighborNode = nodeMap.get(neighborId);
+                const isDot = neighborNode?.shape === 'dot';
+                const isDiamond = neighborNode?.shape === 'diamond';
+
+                if (isStar && neighborId !== fromStar) {
+                    if (!selectedStarIds.has(neighborId)) {
+                        directlyConnectedStars.add(neighborId);
+                        const fullPath = [...path, neighborId];
+                        for (let i = 0; i < fullPath.length - 1; i++) {
+                            const currentId = fullPath[i];
+                            const nextId = fullPath[i + 1];
+                            edgesToKeep.add(edgeKey(currentId, nextId));
+                        }
+                        fullPath.forEach(id => nodesToKeep.add(id));
+                    }
+                    continue;
+                }
+
+                if (isDot || isDiamond || !isStar) {
+                    if (!visited.has(neighborId)) {
+                        visited.add(neighborId);
+                        edgesToKeep.add(edgeKey(nodeId, neighborId));
+                        nodesToKeep.add(neighborId);
+
+                        queue.push({
+                            nodeId: neighborId,
+                            path: [...path, neighborId],
+                            fromStar: fromStar
+                        });
+                    }
+                }
+            }
+        }
+    });
+
+    directlyConnectedStars.forEach(starId => {
+        const neighbors = adjacencyList.get(starId) || new Set();
+        neighbors.forEach(neighborId => {
+            const neighborNode = nodeMap.get(neighborId);
+            const isDot = neighborNode?.shape === 'dot';
+            const isHexagon = neighborNode?.shape === 'hexagon';
+
+            if (isDot || isHexagon) {
+                nodesToKeep.add(neighborId);
+                edgesToKeep.add(edgeKey(starId, neighborId));
+            }
+        });
+    });
+
+    selectedStarIds.forEach(id => nodesToKeep.add(id));
+    const filteredNodes: Vertex[] = nodes.filter(node => nodesToKeep.has(node.id));
+    const filteredEdges: Edge[] = [];
+    const addedEdges = new Set<string>();
+
+    edges.forEach(edge => {
+        const key = edgeKey(edge.from, edge.to);
+
+        if (edgesToKeep.has(key) && !addedEdges.has(key)) {
+            filteredEdges.push({...edge});
+            addedEdges.add(key);
+        }
+    });
+
+    return {
+        filteredNodes,
+        filteredEdges,
+    };
+}
+
+export function filterGraphByIXRoutersData(nodes: Vertex[], edges: Edge[], selectedStarLabels: string[]): { filteredNodes: Vertex[]; filteredEdges: Edge[] } {
+    if (selectedStarLabels.length === 0) {
+        return {
+            filteredNodes: [],
+            filteredEdges: [],
+        };
+    }
+
+    const selectedStarLabelsSet = new Set(selectedStarLabels);
+    const nodeMap = new Map<string, Vertex>();
+    const selectedStarIds = new Set<string>();
+    const nodesToKeep = new Set<string>();
+    const edgesToKeep = new Set<string>();
+
+    nodes.forEach(node => {
+        nodeMap.set(node.id, node);
+        const starName = node.object?.meta?.emulatorInfo?.name;
+        if (node.shape === 'star' && starName && selectedStarLabelsSet.has(starName)) {
+            selectedStarIds.add(node.id);
+            nodesToKeep.add(node.id);
+        }
+    });
+
+    edges.forEach(edge => {
+        const fromIsSelectedStar = selectedStarIds.has(edge.from);
+        const toIsSelectedStar = selectedStarIds.has(edge.to);
+        if (!fromIsSelectedStar && !toIsSelectedStar) return;
+
+        const directNodeId = fromIsSelectedStar ? edge.to : edge.from;
+        const directNode = nodeMap.get(directNodeId);
+        if (directNode?.shape !== 'dot') return;
+
+        nodesToKeep.add(directNodeId);
+        edgesToKeep.add(edgeKey(edge.from, edge.to));
+    });
+
+    const filteredNodes = nodes.filter(node => nodesToKeep.has(node.id));
+    const filteredEdges: Edge[] = [];
+    const addedEdges = new Set<string>();
+
+    edges.forEach(edge => {
+        const key = edgeKey(edge.from, edge.to);
+        if (edgesToKeep.has(key) && !addedEdges.has(key)) {
+            filteredEdges.push({...edge});
+            addedEdges.add(key);
+        }
+    });
+
+    return {
+        filteredNodes,
+        filteredEdges,
+    };
+}
+
 /**
  * map UI controller.
  */
@@ -31,6 +210,10 @@ export class MapUi extends BaseMapUi {
 
     getTransits() {
         return this._datasource.transits;
+    }
+
+    private edgeKey(from: string, to: string): string {
+        return edgeKey(from, to);
     }
 
     setGraphEdgeEvent(tooltipContent, tooltipVisible, position) {
@@ -59,142 +242,7 @@ export class MapUi extends BaseMapUi {
     }
 
     filterGraphByIX(selectedStarLabels: string[]): { filteredNodes: Vertex[]; filteredEdges: Edge[] } {
-        const nodes = this._datasource.vertices
-        const edges = this._datasource.edges
-
-        const nodeMap = new Map<string, Vertex>();
-        nodes.forEach(node => nodeMap.set(node.id, node));
-
-        const selectedStarIds = new Set<string>();
-        const selectedStarLabelsSet = new Set(selectedStarLabels);
-
-        const allStarIds = new Set<string>();
-        const starIdToName = new Map<string, string>();
-
-        nodes.forEach(node => {
-            if (node.shape === 'star') {
-                allStarIds.add(node.id);
-                const starName = node.object?.meta?.emulatorInfo?.name;
-                if (starName) {
-                    starIdToName.set(node.id, starName);
-                    if (selectedStarLabelsSet.has(starName)) {
-                        selectedStarIds.add(node.id);
-                    }
-                }
-            }
-        });
-
-        const adjacencyList = new Map<string, Set<string>>();
-        nodes.forEach(node => adjacencyList.set(node.id, new Set()));
-        edges.forEach(edge => {
-            adjacencyList.get(edge.from)?.add(edge.to);
-            adjacencyList.get(edge.to)?.add(edge.from);
-        });
-
-        const nodesToKeep = new Set<string>(selectedStarIds);
-        const edgesToKeep = new Set<string>();
-        const directlyConnectedStars = new Set<string>();
-
-        selectedStarIds.forEach(starId => {
-            const queue: { nodeId: string; path: string[]; fromStar: string }[] = [
-                {nodeId: starId, path: [starId], fromStar: starId}
-            ];
-
-            const visited = new Set<string>([starId]);
-
-            while (queue.length > 0) {
-                const {nodeId, path, fromStar} = queue.shift()!;
-                const neighbors = adjacencyList.get(nodeId) || new Set();
-
-                for (const neighborId of neighbors) {
-                    if (path.includes(neighborId)) continue;
-
-                    const isStar = allStarIds.has(neighborId);
-                    const neighborNode = nodeMap.get(neighborId);
-                    const isDot = neighborNode?.shape === 'dot';
-                    const isDiamond = neighborNode?.shape === 'diamond';
-
-                    if (isStar && neighborId !== fromStar) {
-                        if (!selectedStarIds.has(neighborId)) {
-                            directlyConnectedStars.add(neighborId);
-                            const fullPath = [...path, neighborId];
-                            for (let i = 0; i < fullPath.length - 1; i++) {
-                                const currentId = fullPath[i];
-                                const nextId = fullPath[i + 1];
-                                const edgeKey = [currentId, nextId].sort().join('-');
-                                edgesToKeep.add(edgeKey);
-                            }
-                            fullPath.forEach(id => nodesToKeep.add(id));
-                        }
-                        continue;
-                    }
-
-                    if (isDot || isDiamond) {
-                        if (!visited.has(neighborId)) {
-                            visited.add(neighborId);
-                            const edgeKey = [nodeId, neighborId].sort().join('-');
-                            edgesToKeep.add(edgeKey);
-                            nodesToKeep.add(neighborId);
-
-                            queue.push({
-                                nodeId: neighborId,
-                                path: [...path, neighborId],
-                                fromStar: fromStar
-                            });
-                        }
-                    }
-                    else if (!isStar) {
-                        if (!visited.has(neighborId)) {
-                            visited.add(neighborId);
-
-                            const edgeKey = [nodeId, neighborId].sort().join('-');
-                            edgesToKeep.add(edgeKey);
-                            nodesToKeep.add(neighborId);
-
-                            queue.push({
-                                nodeId: neighborId,
-                                path: [...path, neighborId],
-                                fromStar: fromStar
-                            });
-                        }
-                    }
-                }
-            }
-        });
-
-        directlyConnectedStars.forEach(starId => {
-            const neighbors = adjacencyList.get(starId) || new Set();
-            neighbors.forEach(neighborId => {
-                const neighborNode = nodeMap.get(neighborId);
-                const isDot = neighborNode?.shape === 'dot';
-
-                if (isDot) {
-                    nodesToKeep.add(neighborId);
-                    const edgeKey = [starId, neighborId].sort().join('-');
-                    edgesToKeep.add(edgeKey);
-                }
-            });
-        });
-
-        selectedStarIds.forEach(id => nodesToKeep.add(id));
-        const filteredNodes: Vertex[] = nodes.filter(node => nodesToKeep.has(node.id));
-        const filteredEdges: Edge[] = [];
-        const addedEdges = new Set<string>();
-
-        edges.forEach(edge => {
-            const edgeKey = [edge.from, edge.to].sort().join('-');
-
-            if (edgesToKeep.has(edgeKey) && !addedEdges.has(edgeKey)) {
-                const newEdge = {...edge};
-                filteredEdges.push(newEdge);
-                addedEdges.add(edgeKey);
-            }
-        });
-
-        return {
-            filteredNodes,
-            filteredEdges,
-        };
+        return filterGraphByIXData(this._datasource.vertices, this._datasource.edges, selectedStarLabels)
     }
 
     filterGraphByIXNum(ixNumber: number): { filteredNodes: Vertex[], filteredEdges: Edge[] } {
@@ -237,7 +285,7 @@ export class MapUi extends BaseMapUi {
             const neighbors = adjacencyList.get(nodeId) || new Set();
             neighbors.forEach(neighborId => {
                 nodesToKeep.add(neighborId);
-                const edgeKey = [nodeId, neighborId].sort().join('-');
+            const edgeKey = this.edgeKey(nodeId, neighborId);
                 edgesToKeep.add(edgeKey);
             });
         });
@@ -252,9 +300,9 @@ export class MapUi extends BaseMapUi {
 
             neighbors.forEach(neighborId => {
                 const neighborNode = nodeMap.get(neighborId);
-                if (neighborNode?.shape === 'dot') {
+                if (neighborNode?.shape === 'dot' || neighborNode?.shape === 'hexagon') {
                     nodesToKeep.add(neighborId);
-                    const edgeKey = [starId, neighborId].sort().join('-');
+                    const edgeKey = this.edgeKey(starId, neighborId);
                     edgesToKeep.add(edgeKey);
                 }
             });
@@ -263,7 +311,7 @@ export class MapUi extends BaseMapUi {
         selectedGroupNodeIds.forEach(nodeId1 => {
             selectedGroupNodeIds.forEach(nodeId2 => {
                 if (nodeId1 < nodeId2) {
-                    const edgeKey = [nodeId1, nodeId2].sort().join('-');
+                    const edgeKey = this.edgeKey(nodeId1, nodeId2);
                     if (adjacencyList.get(nodeId1)?.has(nodeId2)) {
                         edgesToKeep.add(edgeKey);
                     }
@@ -276,7 +324,7 @@ export class MapUi extends BaseMapUi {
         const addedEdges = new Set<string>();
 
         edges.forEach(edge => {
-            const edgeKey = [edge.from, edge.to].sort().join('-');
+                const edgeKey = this.edgeKey(edge.from, edge.to);
 
             if (edgesToKeep.has(edgeKey) && !addedEdges.has(edgeKey)) {
                 const newEdge = {...edge};

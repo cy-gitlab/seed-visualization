@@ -1,6 +1,7 @@
-import {createRouter, createWebHistory, type RouteRecordRaw} from 'vue-router'
+﻿import {createRouter, createWebHistory, type RouteRecordRaw} from 'vue-router'
 import {RouterToListItem} from "@/utils/tools.ts"
 import type {NewRouteRecord, RouteRecord} from "@/types/index.ts"
+import {getPlugins} from "@/utils/router.ts";
 
 
 export const defaultRouters: RouteRecord[] = [
@@ -79,6 +80,16 @@ export const defaultRouters: RouteRecord[] = [
                 },
             },
             {
+                path: '/ixMap3D',
+                component: () => import('@/view/map/ixMap3D/ixMap3D.vue'),
+                name: 'ixMap3D',
+                meta: {
+                    title: "IXMap3D",
+                    icon: 'HomeFilled',
+                    componentName: 'IXMap3D',
+                },
+            },
+            {
                 path: '/transitMap',
                 component: () => import('@/view/map/transitMap/transitMap.vue'),
                 name: 'transitMap',
@@ -88,16 +99,6 @@ export const defaultRouters: RouteRecord[] = [
                     componentName: 'TransitMap',
                 },
             },
-            // {
-            //     path: '/testMap',
-            //     component: () => import('@/view/map/test/testMap.vue'),
-            //     name: 'testMap',
-            //     meta: {
-            //         title: "testMap",
-            //         icon: 'HomeFilled',
-            //         componentName: 'testMap',
-            //     },
-            // },
         ]
     },
     {
@@ -118,20 +119,32 @@ export const defaultRouters: RouteRecord[] = [
             title: '404',
             componentName: 'NotFound',
         }
-    }
+    },
 ]
 
 export const routerList: NewRouteRecord[] = RouterToListItem(defaultRouters)
 
-let router = createRouter({
-    history: createWebHistory(import.meta.env.VITE_FRONTEND_URL_PREFIX),
-    routes: defaultRouters as RouteRecordRaw[],
-    scrollBehavior() {
-        return {
-            left: 0,
-            top: 0
-        }
-    }
-})
+export const createAppRouter = async () => {
 
-export default router
+    const pluginRoutes = getPlugins().flatMap(
+        plugin => plugin.routes || []
+    )
+
+    return createRouter({
+        history: createWebHistory(
+            import.meta.env.VITE_FRONTEND_URL_PREFIX
+        ),
+
+        routes: [
+            ...defaultRouters,
+            ...pluginRoutes,
+        ] as RouteRecordRaw[],
+
+        scrollBehavior() {
+            return {
+                left: 0,
+                top: 0,
+            }
+        },
+    })
+}

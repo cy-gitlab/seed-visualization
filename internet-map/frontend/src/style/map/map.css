@@ -40,7 +40,7 @@ html, body, .map-area, .map {
 }
 
 .tabs-panel {
-    width: calc(100vw - 20px);
+    width: 100vw;
     z-index: 10;
 }
 
@@ -84,21 +84,21 @@ html, body, .map-area, .map {
     cursor: pointer;
 }
 
-.tabs-panel  .suggestions .suggestion .name {
+.tabs-panel .suggestions .suggestion .name {
     font-weight: bold;
     padding-right: .5em;
 }
 
-.tabs-panel  .suggestions .suggestion .details {
+.tabs-panel .suggestions .suggestion .details {
     color: #666;
     font-size: .8em;
 }
 
-.tabs-panel  .suggestions .suggestion.active {
+.tabs-panel .suggestions .suggestion.active {
     background-color: #ccc;
 }
 
-.tabs-panel  .suggestions .suggestion:hover:not(.active) {
+.tabs-panel .suggestions .suggestion:hover:not(.active) {
     background-color: #eee;
 }
 
@@ -259,4 +259,15 @@ label {
 
 #current-multiplier::after {
     content: 'x';
+}
+
+.input-tabs {
+    padding: 10px;
+
+    .submit {
+        background: rgb(203 216 235);
+        color: blue;
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+    }
 }

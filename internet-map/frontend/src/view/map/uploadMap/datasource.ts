@@ -9,6 +9,10 @@ export interface SimplifiedResult {
 }
 
 export class DataSource extends BaseDataSource {
+    private _cachedVertices?: Vertex[];
+    private _cachedEdges?: Edge[];
+    private _cachedVisDataSet?: { vertices: Vertex[], edges: Edge[] };
+
     async connect() {
         if (this._nodes.length === 0 || this._nets.length === 0) {
             return
@@ -47,17 +51,39 @@ export class DataSource extends BaseDataSource {
         const {nodes, nets} = data
         this._nodes = nodes || []
         this._nets = nets || []
+        this._cachedVertices = undefined;
+        this._cachedEdges = undefined;
+        this._cachedVisDataSet = undefined;
+    }
+
+    get vertices(): Vertex[] {
+        if (!this._cachedVertices) {
+            this._cachedVertices = super.vertices;
+        }
+        return this._cachedVertices;
+    }
+
+    get edges(): Edge[] {
+        if (!this._cachedEdges) {
+            this._cachedEdges = super.edges;
+        }
+        return this._cachedEdges;
     }
 
     visDataSet(): { vertices: Vertex[], edges: Edge[] } {
+        if (this._cachedVisDataSet) {
+            return this._cachedVisDataSet;
+        }
+
         const allEdges: Edge[] = this.edges;
         const allVertices = this.vertices
 
         const result = this.simplifyNetworkGraph2(allVertices, allEdges);
-        return {
+        this._cachedVisDataSet = {
             vertices: result.simplifiedVertices,
             edges: result.simplifiedEdges
         };
+        return this._cachedVisDataSet;
     }
 
     truncateLabel(label: string, maxLength: number = 15): { display: string; full: string } {
@@ -69,6 +95,10 @@ export class DataSource extends BaseDataSource {
 
         const truncated = label.substring(0, maxLength - 3) + '...';
         return {display: truncated, full: label};
+    }
+
+    private edgeKey(from: string, to: string): string {
+        return from < to ? `${from}\u0000${to}` : `${to}\u0000${from}`;
     }
 
     simplifyNetworkGraph1(nodes: Vertex[], edges: Edge[]): SimplifiedResult {
@@ -230,7 +260,6 @@ export class DataSource extends BaseDataSource {
     simplifyNetworkGraph2(nodes: Vertex[], edges: Edge[]): SimplifiedResult {
         const nodeMap = new Map<string, Vertex>();
         const adjacencyList = new Map<string, Set<string>>();
-        const edgeLabels = new Map<string, string[]>();
 
         nodes.forEach(node => {
             nodeMap.set(node.id, node);
@@ -240,23 +269,6 @@ export class DataSource extends BaseDataSource {
         edges.forEach(edge => {
             adjacencyList.get(edge.from)?.add(edge.to);
             adjacencyList.get(edge.to)?.add(edge.from);
-
-            const key1 = `${edge.from}-${edge.to}`;
-            const key2 = `${edge.to}-${edge.from}`;
-
-            if (!edgeLabels.has(key1)) {
-                edgeLabels.set(key1, []);
-            }
-            if (edge.label) {
-                edgeLabels.get(key1)?.push(edge.label);
-            }
-
-            if (!edgeLabels.has(key2)) {
-                edgeLabels.set(key2, []);
-            }
-            if (edge.label) {
-                edgeLabels.get(key2)?.push(edge.label);
-            }
         });
 
         const starNodes = nodes.filter(node => node.shape === "star").map(node => node.id);
@@ -311,7 +323,7 @@ export class DataSource extends BaseDataSource {
                     }
 
                     if (isStar && neighbor !== startId) {
-                        const pathKey = [startId, neighbor].sort().join('-') + '-' + newDotLabels.join(',');
+                        const pathKey = `${this.edgeKey(startId, neighbor)}-${newDotLabels.join(',')}`;
                         if (newDotLabels.length > 0 && !processedPaths.has(pathKey)) {
                             processedPaths.add(pathKey);
                             const pathNodes = newPath.filter(id => !dotNodes.has(id));
@@ -442,7 +454,7 @@ export class DataSource extends BaseDataSource {
             const toRemoved = removedNodes.has(edge.to);
 
             if (!fromRemoved && !toRemoved) {
-                const edgeKey = [edge.from, edge.to].sort().join('-');
+                const edgeKey = this.edgeKey(edge.from, edge.to);
 
                 if (!addedEdges.has(edgeKey)) {
                     const {display, full} = this.truncateLabel(edge.label || '', 15);
@@ -457,7 +469,7 @@ export class DataSource extends BaseDataSource {
         });
 
         newEdgesToAdd.forEach(newEdge => {
-            const edgeKey = [newEdge.from, newEdge.to].sort().join('-');
+            const edgeKey = this.edgeKey(newEdge.from, newEdge.to);
 
             if (!addedEdges.has(edgeKey)) {
                 const {display, full} = this.truncateLabel(newEdge.label, 15);

@@ -23,6 +23,7 @@
             <template #title>Map</template>
             <el-menu-item index="/map">Map</el-menu-item>
             <el-menu-item index="/ixMap">IXMap</el-menu-item>
+            <el-menu-item index="/ixMap3D">IXMap3D</el-menu-item>
             <el-menu-item index="/transitMap">TransitMap</el-menu-item>
             <el-menu-item index="/uploadMap">UploadMap</el-menu-item>
           </el-sub-menu>
@@ -59,3 +60,6 @@ const route = useRoute();
 }
 
 </style>
+
+
+

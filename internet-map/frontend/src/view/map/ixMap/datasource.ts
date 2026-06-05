@@ -1,6 +1,4 @@
 import {DataSource as BaseDataSource, type Edge, type Vertex} from '@/utils/map-datasource.ts';
-import type {EmulatorNetwork} from "@/utils/types.ts";
-import {dealTransitWeight} from "@/utils/tools.ts";
 
 export class DataSource extends BaseDataSource {
     visDataSet(ixsNumber: number): { vertices: Vertex[], edges: Edge[] } {

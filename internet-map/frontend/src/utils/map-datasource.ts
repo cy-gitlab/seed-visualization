@@ -26,7 +26,9 @@ export interface Vertex extends NodeOptions {
     custom?: string,
     hidden?: boolean,
     borderWidth?: number,
-    weight?: string
+    weight?: string,
+    x?: number,
+    y?: number,
 }
 
 export interface Edge extends EdgeOptions {

@@ -118,7 +118,7 @@ export class MapUi {
     private _logToggle: HTMLElement;
 
     private _suggestions: HTMLElement;
-    private allService: Ref<string[]>;
+    protected allService: Ref<string[]>;
 
     private _replayButton: replayValueType;
     private _recordButton: replayValueType;
@@ -136,9 +136,9 @@ export class MapUi {
 
     private _clickTimer: number | null;
 
-    private _nodes: NodesType;
-    private _edges: EdgesType;
-    private _graph: Network;
+    protected _nodes: NodesType;
+    protected _edges: EdgesType;
+    protected _graph: Network;
 
     private detailsDialogVisible: Ref<boolean>
     private vertexDetails: Ref<Details[]>
@@ -1069,7 +1069,7 @@ export class MapUi {
     /**
      * map mac addresses to networks.
      */
-    private _mapMacAddresses() {
+    protected _mapMacAddresses() {
         this._nodes.forEach(vertex => {
             if (vertex.type != 'node') {
                 return;
@@ -1514,7 +1514,9 @@ export class MapUi {
         this._edges = new DataSet(edges);
         this._nodes = new DataSet(vertices);
 
-        this.allLoadingInstance = allLoading()
+        if (!this.allLoadingInstance) {
+            this.allLoadingInstance = allLoading()
+        }
         this.createVisGraph()
     }
 
@@ -1523,6 +1525,13 @@ export class MapUi {
             this.allLoadingInstance.close()
         }
         this.allLoadingInstance = allLoading()
+    }
+
+    setAllLoadingInstance(loadingInstance: LoadingInstance) {
+        if (this.allLoadingInstance && this.allLoadingInstance !== loadingInstance) {
+            this.allLoadingInstance.close()
+        }
+        this.allLoadingInstance = loadingInstance
     }
 
     createVisGraph() {
@@ -1535,12 +1544,13 @@ export class MapUi {
                 }
             }
         });
+        const stabilizationIterations = this._nodes.length > 3000 ? 35 : this._nodes.length > 1500 ? 55 : 100
         const otherOptions = this._nodes.length > VIS_VERTEX_MAX ? {
             physics: {
                 enabled: true,
                 stabilization: {
                     enabled: true,
-                    iterations: 100,
+                    iterations: stabilizationIterations,
                     updateInterval: 50
                 },
                 solver: 'forceAtlas2Based',
@@ -1557,10 +1567,7 @@ export class MapUi {
                 smooth: {
                     type: 'continuous'
                 }
-            },
-            configure: {
-                enabled: false
-            },
+            }
         } : {}
 
         this._graph = new Network(this._mapElement, {

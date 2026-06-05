@@ -4,6 +4,7 @@ import type {RouteRecord, NewRouteRecord} from "@/types/index.ts";
 import type {EmulatorNetwork, EmulatorNode} from "@/utils/types.ts";
 import {type Vertex} from '@/utils/map-datasource.ts';
 
+const META_PREFIX = 'org.seedsecuritylabs.seedemu.meta.';
 export const getRouteByPath = (path: string) => {
     const router = useRouter()
     const routes = router.getRoutes()
@@ -152,14 +153,15 @@ export function genVisData(composeData: ComposeData, projectName = "demo_output"
             const labels = netConfig.labels || {};
 
             networkNameToId[fullNetName] = netId;
-
             // Extract emulator info from labels
             const emulatorInfo = {
-                name: labels['org.seedsecuritylabs.seedemu.meta.name'] || '',
-                prefix: labels['org.seedsecuritylabs.seedemu.meta.prefix'] || subnet,
-                scope: labels['org.seedsecuritylabs.seedemu.meta.scope'] || '',
-                type: labels['org.seedsecuritylabs.seedemu.meta.type'] || 'local',
-                displayname: labels['org.seedsecuritylabs.seedemu.meta.displayname'] || '',
+                name: labels[`${META_PREFIX}name`] || '',
+                prefix: labels[`${META_PREFIX}prefix`] || subnet,
+                scope: labels[`${META_PREFIX}scope`] || '',
+                type: labels[`${META_PREFIX}type`] || 'local',
+                displayname: labels[`${META_PREFIX}displayname`] || '',
+                longitude: labels[`${META_PREFIX}longitude`] || '',
+                latitude: labels[`${META_PREFIX}latitude`] || '',
             };
 
             const network: EmulatorNetwork = {
@@ -384,7 +386,7 @@ export function genVisData(composeData: ComposeData, projectName = "demo_output"
     let count = 0;
     for (const [netName, netId] of Object.entries(networkNameToId)) {
         if (count >= 5) break;
-        console.log(`  ${netName} -> ${netId.substring(0, 16)}...`);
+        // console.log(`  ${netName} -> ${netId.substring(0, 16)}...`);
         count++;
     }
     const [nodes, skippedNodes] = createNodes(composeData, networkNameToId, projectName);

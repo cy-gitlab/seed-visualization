@@ -1,5 +1,5 @@
 <script setup lang="ts" xmlns="http://www.w3.org/1999/html">
-import {ref, onMounted, reactive, nextTick, shallowRef, type PropType, type Component} from "vue";
+import {ref, onMounted, reactive, nextTick, shallowRef, type PropType, type Component, onBeforeUnmount} from "vue";
 import {ElMessageBox, type TabsPaneContext} from 'element-plus'
 import {ElNotification, ElMessage} from "element-plus";
 import type {Details} from '@/types'
@@ -100,7 +100,6 @@ const replayState = reactive({
   }
 })
 
-const imgSrc = new URL('@/assets/img/worldMap.png', import.meta.url).href
 const onSubmitFilter = async () => {
   if (!mapUi.value) return
   await mapUi.value?.onSubmitFilter(inputFilter.value)
@@ -223,17 +222,33 @@ const searchInput = () => {
   if (!mapUi.value) return
   mapUi.value?.updateFilterSuggestions(inputSearch.value)
 }
-
+const closeSuggestions = () => {
+  const suggestions = document.getElementById('filter-suggestions')
+  if (suggestions) {
+    suggestions.innerText = ''
+  }
+}
+const onDocumentPointerDown = (event: PointerEvent) => {
+  const target = event.target as HTMLElement | null
+  if (!target) return
+  if (target.closest('#filter-suggestions') || target.closest('#input-filter') || target.closest('#input-search')) {
+    return
+  }
+  closeSuggestions()
+}
+const onDocumentKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') {
+    closeSuggestions()
+  }
+}
 const getConsoleIframeElement = (id: string) => {
   if (!mapUi.value) return
   return mapUi.value?.getConsoleIframeElement(id)
 }
-
 const getNodeInfoByContainerName = (name: string) => {
   if (!mapUi.value) return
   return mapUi.value?.getNodeInfoByContainerName(name)
 }
-
 const packetWsSet = () => {
   const packetWs = getSocket('ws', '/packet')
   packetWs.onmessage = (event) => {
@@ -268,7 +283,6 @@ const packetWsSet = () => {
     }
   }
 }
-
 const hostWsSet = (ui: MapUi | IXMapUi | TransitMapUi) => {
   const ws = getSocket()
   ws.onmessage = (event) => {
@@ -281,6 +295,8 @@ const hostWsSet = (ui: MapUi | IXMapUi | TransitMapUi) => {
   }
 }
 onMounted(() => {
+  document.addEventListener('pointerdown', onDocumentPointerDown)
+  document.addEventListener('keydown', onDocumentKeydown)
   nextTick(async () => {
     const datasource = new props.dataSourceClass();
     const config = {
@@ -355,6 +371,10 @@ onMounted(() => {
       }
     })
   })
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown)
+  document.removeEventListener('keydown', onDocumentKeydown)
 })
 defineExpose({mapUi})
 </script>
@@ -580,15 +600,6 @@ defineExpose({mapUi})
 <style scoped lang="scss">
 @use '@/style/common/window-manager.css' as *;
 @use '@/style/map/map.css' as *;
-
-.input-tabs {
-  padding: 10px;
-
-  .submit {
-    background: rgb(203 216 235);
-    color: blue;
-  }
-}
 
 .el-slider {
   margin-left: 10px;
