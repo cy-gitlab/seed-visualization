@@ -7,7 +7,7 @@ import {SubmitEvent} from '../../utils/submit-event';
 import {PluginManager} from '../../utils/plugin-manager';
 import WebSocket from 'ws';
 import {Controller} from '../../utils/controller';
-import satelliteRouter from './satellite/index';
+import {createDockerClient} from '../../utils/docker-client';
 
 let snifferSubscribers: WebSocket[] = [];
 let currentSnifferFilter: string = '';
@@ -19,7 +19,7 @@ const wsDataType = {
     CAPTURE_PACKET: "CAPTURE_PACKET"
 }
 const router = express.Router();
-const docker = new dockerode();
+const docker = createDockerClient();
 const socketHandler = new SocketHandler(docker);
 const sniffer = new Sniffer(docker);
 const controller = new Controller(docker);
@@ -471,5 +471,4 @@ router.post('/packet', express.json(), async function (req, res, next) {
     next();
 });
 
-router.use('/satellite', satelliteRouter);
 export = router;

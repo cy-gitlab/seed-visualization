@@ -1,7 +1,8 @@
 import path from 'node:path'
 import vue from '@vitejs/plugin-vue'
 import cesium from 'vite-plugin-cesium'
-import {loadEnv, defineConfig, type PluginOption} from 'vite'
+import {loadEnv, type PluginOption} from 'vite'
+import {defineConfig} from 'vitest/config'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import {ElementPlusResolver} from 'unplugin-vue-components/resolvers'
@@ -54,13 +55,15 @@ export default defineConfig(({mode}) => {
                 cesiumBaseUrl: '../cesium',
             }),
             createCesiumBuildBasePlugin(env),
-            Components({
-                resolvers: [ElementPlusResolver()],
-            }),
-            AutoImport({
-                resolvers: [ElementPlusResolver()],
-                imports: ['vue', 'vue-router'],
-            }),
+            ...(mode === 'test' ? [] : [
+                Components({
+                    resolvers: [ElementPlusResolver()],
+                }),
+                AutoImport({
+                    resolvers: [ElementPlusResolver()],
+                    imports: ['vue', 'vue-router'],
+                }),
+            ]),
         ],
         resolve: {
             alias: {
@@ -93,10 +96,6 @@ export default defineConfig(({mode}) => {
                 },
             },
         },
-        preview: {
-            host: env.VITE_PREVIEW_HOST || env.VITE_FRONTEND_HOST || '127.0.0.1',
-            port: readNumberEnv(env.VITE_PREVIEW_PORT, 6173),
-        },
         build: {
             outDir: env.VITE_BUILD_OUTPUT_PATH || 'dist',
             assetsDir: 'assets',
@@ -118,6 +117,13 @@ export default defineConfig(({mode}) => {
                     }
                 }
             }
+        },
+        test: {
+            globals: true,
+            environment: 'jsdom',
+            setupFiles: './tests/setup.ts',
+            css: true,
+            exclude: ['tests/e2e/**', 'node_modules/**', 'dist/**'],
         },
         base: env.VITE_BUILD_ASSET_PREFIX,
     }

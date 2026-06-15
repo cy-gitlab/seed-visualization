@@ -7,7 +7,7 @@
     "esModuleInterop": true,
     "sourceMap": true,
     "skipLibCheck": true,
-    "types": ["node"],
+    "types": ["node", "jest"],
     "outDir": "bin/",
     "lib": ["ES2015", "DOM", "ESNext.Disposable"]
   },
