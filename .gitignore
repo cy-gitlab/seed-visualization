@@ -29,3 +29,4 @@ components.d.ts
 pubulic/
 tsconfig.tsbuildinfo
 .agents
+ground-links.json
