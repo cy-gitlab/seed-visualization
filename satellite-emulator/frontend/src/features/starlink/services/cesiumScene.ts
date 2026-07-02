@@ -37,10 +37,11 @@ const SELECTED_COLOR = Color.fromCssColorString('#ff6a1a');
 const HIGHLIGHT_COLOR = Color.fromCssColorString('#fff7c8');
 const HOVER_COLOR = Color.fromCssColorString('#fff8dc');
 const ORBIT_COLOR = Color.fromCssColorString('#ff6b3a').withAlpha(0.42);
-const STATION_COLOR = Color.fromCssColorString('#28d7ff');
-const STATION_INNER_COLOR = Color.fromCssColorString('#063f68');
+const STATION_COLOR = Color.fromCssColorString('#ffffff');
 const LINK_COLOR = Color.fromCssColorString('#45f3ff').withAlpha(0.62);
 const SATELLITE_LINK_COLOR = Color.fromCssColorString('#ffe66d').withAlpha(0.72);
+const SATELLITE_PIXEL_SIZE = 2.25;
+const STATION_PIXEL_SIZE = SATELLITE_PIXEL_SIZE * 2;
 const GROUND_LINK_ARC_SEGMENTS = 48;
 const GROUND_LINK_MIN_ARC_LIFT_METERS = 260_000;
 const GROUND_LINK_MAX_ARC_LIFT_METERS = 1_400_000;
@@ -240,7 +241,8 @@ export function createCesiumScene(container: HTMLElement): CesiumSceneApi {
     const highlighted = highlightedIds.has(satelliteId);
     const pulse = highlighted ? 1 + Math.sin(Date.now() / 180) * 0.32 : 1;
 
-    point.pixelSize = (hovered ? 15 : highlighted ? 11.25 : selected ? 6 : 2.25) * pulse;
+    point.pixelSize =
+      (hovered ? 15 : highlighted ? 11.25 : selected ? 6 : SATELLITE_PIXEL_SIZE) * pulse;
     point.color = hovered
       ? HOVER_COLOR
       : highlighted
@@ -274,11 +276,10 @@ export function createCesiumScene(container: HTMLElement): CesiumSceneApi {
       stationPoints.add({
         id: station,
         position,
-        pixelSize: 11,
-        color: STATION_INNER_COLOR,
-        outlineColor: STATION_COLOR,
-        outlineWidth: 3,
-        scaleByDistance: new NearFarScalar(1_500_000, 1.3, 14_000_000, 0.55),
+        pixelSize: STATION_PIXEL_SIZE,
+        color: STATION_COLOR,
+        outlineWidth: 0,
+        scaleByDistance: new NearFarScalar(2_000_000, 2, 18_000_000, 0.95),
       });
 
       labels.add({
@@ -290,7 +291,7 @@ export function createCesiumScene(container: HTMLElement): CesiumSceneApi {
         outlineWidth: 3,
         style: LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: VerticalOrigin.BOTTOM,
-        pixelOffset: new Cartesian2(0, -18),
+        pixelOffset: new Cartesian2(0, -12),
         heightReference: HeightReference.NONE,
         scaleByDistance: new NearFarScalar(1_500_000, 1, 12_000_000, 0.22),
       });
@@ -307,7 +308,7 @@ export function createCesiumScene(container: HTMLElement): CesiumSceneApi {
       const point = points.add({
         id: satellite,
         position,
-        pixelSize: 2.25,
+        pixelSize: SATELLITE_PIXEL_SIZE,
         color: STARLINK_COLOR,
         outlineWidth: 0,
         scaleByDistance: new NearFarScalar(2_000_000, 2, 18_000_000, 0.95),
@@ -355,7 +356,7 @@ export function createCesiumScene(container: HTMLElement): CesiumSceneApi {
 
       groundLinkLines.add({
         positions: createGroundLinkArcPositions(satellite, station),
-        width: 1.8,
+        width: 0.9,
         material: createDashMaterial(LINK_COLOR),
       });
     });
@@ -380,7 +381,7 @@ export function createCesiumScene(container: HTMLElement): CesiumSceneApi {
             satelliteB.altitudeKm * 1000,
           ),
         ],
-        width: 1.6,
+        width: 0.8,
         material: createDashMaterial(SATELLITE_LINK_COLOR),
       });
     });
@@ -405,7 +406,12 @@ export function createCesiumScene(container: HTMLElement): CesiumSceneApi {
         ? `station:${station.id}`
         : undefined;
 
-    if (!focusKey || focusKey === lastFocusKey) {
+    if (!focusKey) {
+      lastFocusKey = undefined;
+      return;
+    }
+
+    if (focusKey === lastFocusKey) {
       return;
     }
 

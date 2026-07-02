@@ -2,6 +2,7 @@ export type PlannedOrbitRecord = {
   id: string;
   name: string;
   noradId: number;
+  orbitPlaneId: string;
   epochUtc: string;
   inclinationDeg: number;
   eccentricity: number;
@@ -77,10 +78,17 @@ export type SimulationSettings = {
   customTimeEnabled: boolean;
   showOrbits: boolean;
   showLabels: boolean;
-  focusSatelliteZoom: boolean;
-  showSatelliteStatus: boolean;
+  focusSelection: boolean;
+  showSelectionDetails: boolean;
   useLocalGroundLinks: boolean;
+  hideLinksForFilteredSatellites: boolean;
   search: string;
+  invertSearch: boolean;
+  altitudeMinKm?: number;
+  altitudeMaxKm?: number;
+  invertAltitude: boolean;
+  selectedOrbitPlaneIds: string[];
+  invertOrbitPlanes: boolean;
 };
 
 export type SatelliteDetailRow = {

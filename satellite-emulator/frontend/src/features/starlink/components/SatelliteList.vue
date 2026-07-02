@@ -31,12 +31,94 @@
     </header>
 
     <section v-if="activeTab === 'all'" class="tab-panel satellite-tab">
-      <el-input
-        :model-value="settings.search"
-        clearable
-        placeholder="Search STARLINK or NORAD ID"
-        @update:model-value="updateSetting('search', $event)"
-      />
+      <div class="filter-input-row">
+        <el-input
+          :model-value="settings.search"
+          clearable
+          placeholder="Name or NORAD ID"
+          @update:model-value="updateSetting('search', $event)"
+        />
+        <el-checkbox
+          :model-value="settings.invertSearch"
+          @update:model-value="updateSetting('invertSearch', Boolean($event))"
+        >
+          NOT
+        </el-checkbox>
+      </div>
+
+      <details class="satellite-filters">
+        <summary>
+          <span>More filters</span>
+          <em>{{ activeFilterCount ? `${activeFilterCount} active` : 'None' }}</em>
+        </summary>
+
+        <div class="filter-section">
+          <div class="filter-heading">
+            <el-tooltip
+              content="Both boundary values are included: min ≤ altitude ≤ max."
+              placement="top"
+              :show-after="300"
+            >
+              <span class="filter-label">Altitude (km, inclusive)</span>
+            </el-tooltip>
+            <el-checkbox
+              :model-value="settings.invertAltitude"
+              @update:model-value="updateSetting('invertAltitude', Boolean($event))"
+            >
+              NOT
+            </el-checkbox>
+          </div>
+          <div class="altitude-range">
+            <el-input-number
+              :model-value="settings.altitudeMinKm"
+              :min="0"
+              :controls="false"
+              placeholder="Min"
+              @update:model-value="updateSetting('altitudeMinKm', normalizeOptionalNumber($event))"
+            />
+            <span>to</span>
+            <el-input-number
+              :model-value="settings.altitudeMaxKm"
+              :min="0"
+              :controls="false"
+              placeholder="Max"
+              @update:model-value="updateSetting('altitudeMaxKm', normalizeOptionalNumber($event))"
+            />
+          </div>
+        </div>
+
+        <div class="filter-section">
+          <div class="filter-heading">
+            <span>Orbit planes</span>
+            <el-checkbox
+              :model-value="settings.invertOrbitPlanes"
+              @update:model-value="updateSetting('invertOrbitPlanes', Boolean($event))"
+            >
+              NOT
+            </el-checkbox>
+          </div>
+          <el-select
+            :model-value="settings.selectedOrbitPlaneIds"
+            multiple
+            filterable
+            collapse-tags
+            :max-collapse-tags="1"
+            placeholder="All orbit planes"
+            @update:model-value="updateSetting('selectedOrbitPlaneIds', $event)"
+          >
+            <el-option
+              v-for="orbitPlane in orbitPlaneOptions"
+              :key="orbitPlane"
+              :label="orbitPlane"
+              :value="orbitPlane"
+            />
+          </el-select>
+        </div>
+
+        <el-button text class="clear-filters" :disabled="!activeFilterCount" @click="clearFilters">
+          Clear filters
+        </el-button>
+      </details>
 
       <div ref="bodyRef" class="satellite-list-body" @scroll="handleScroll">
         <div :style="{ height: `${totalHeight}px`, position: 'relative' }">
@@ -147,31 +229,48 @@
       </div>
 
       <div class="switch-grid">
-        <el-switch
-          :model-value="settings.showOrbits"
-          active-text="Orbits"
-          @update:model-value="updateSetting('showOrbits', Boolean($event))"
-        />
-        <el-switch
-          :model-value="settings.showLabels"
-          active-text="Labels"
-          @update:model-value="updateSetting('showLabels', Boolean($event))"
-        />
-        <el-switch
-          :model-value="settings.focusSatelliteZoom"
-          active-text="Focus satellite"
-          @update:model-value="updateSetting('focusSatelliteZoom', Boolean($event))"
-        />
-        <el-switch
-          :model-value="settings.showSatelliteStatus"
-          active-text="Satellite status"
-          @update:model-value="updateSetting('showSatelliteStatus', Boolean($event))"
-        />
-        <el-switch
-          :model-value="settings.useLocalGroundLinks"
-          active-text="Local links"
-          @update:model-value="updateSetting('useLocalGroundLinks', Boolean($event))"
-        />
+        <el-tooltip content="Show orbit paths for selected or connected satellites." placement="top" :show-after="300">
+          <el-switch
+            :model-value="settings.showOrbits"
+            active-text="Orbits"
+            @update:model-value="updateSetting('showOrbits', Boolean($event))"
+          />
+        </el-tooltip>
+        <el-tooltip content="Show name labels for selected or highlighted satellites." placement="top" :show-after="300">
+          <el-switch
+            :model-value="settings.showLabels"
+            active-text="Labels"
+            @update:model-value="updateSetting('showLabels', Boolean($event))"
+          />
+        </el-tooltip>
+        <el-tooltip content="Move and zoom the camera to a selected satellite or ground station." placement="top" :show-after="300">
+          <el-switch
+            :model-value="settings.focusSelection"
+            active-text="Focus selection"
+            @update:model-value="updateSetting('focusSelection', Boolean($event))"
+          />
+        </el-tooltip>
+        <el-tooltip content="Show details for the selected satellite or ground station." placement="top" :show-after="300">
+          <el-switch
+            :model-value="settings.showSelectionDetails"
+            active-text="Selection details"
+            @update:model-value="updateSetting('showSelectionDetails', Boolean($event))"
+          />
+        </el-tooltip>
+        <el-tooltip content="Use locally calculated nearest-station links instead of backend ground links." placement="top" :show-after="300">
+          <el-switch
+            :model-value="settings.useLocalGroundLinks"
+            active-text="Local links"
+            @update:model-value="updateSetting('useLocalGroundLinks', Boolean($event))"
+          />
+        </el-tooltip>
+        <el-tooltip content="Hide every link involving a satellite that is excluded by the current filters." placement="top" :show-after="300">
+          <el-switch
+            :model-value="settings.hideLinksForFilteredSatellites"
+            active-text="Hide filtered links"
+            @update:model-value="updateSetting('hideLinksForFilteredSatellites', Boolean($event))"
+          />
+        </el-tooltip>
       </div>
     </section>
   </section>
@@ -188,6 +287,7 @@ import type {
 const props = defineProps<{
   satellites: SatellitePoint[];
   selectedSatellites: SatellitePoint[];
+  orbitPlaneOptions: string[];
   groundStations: GroundStation[];
   settings: SimulationSettings;
   currentTime: Date;
@@ -253,6 +353,15 @@ const timestampPreview = computed(() => {
 const selectedSatelliteIds = computed(
   () => new Set(props.selectedSatellites.map((satellite) => satellite.id)),
 );
+const activeFilterCount = computed(
+  () =>
+    Number(Boolean(props.settings.search.trim())) +
+    Number(
+      Number.isFinite(props.settings.altitudeMinKm) ||
+        Number.isFinite(props.settings.altitudeMaxKm),
+    ) +
+    Number(props.settings.selectedOrbitPlaneIds.length > 0),
+);
 const totalHeight = computed(() => props.satellites.length * rowHeight);
 const visibleCount = computed(() => {
   const height = bodyRef.value?.clientHeight ?? 430;
@@ -277,6 +386,24 @@ watch(
 
     if (count === 0 && previousCount > 0) {
       activeTab.value = 'all';
+    }
+  },
+);
+
+watch(
+  () => [
+    props.settings.search,
+    props.settings.invertSearch,
+    props.settings.altitudeMinKm,
+    props.settings.altitudeMaxKm,
+    props.settings.invertAltitude,
+    props.settings.selectedOrbitPlaneIds.join(','),
+    props.settings.invertOrbitPlanes,
+  ],
+  () => {
+    scrollTop.value = 0;
+    if (bodyRef.value) {
+      bodyRef.value.scrollTop = 0;
     }
   },
 );
@@ -308,6 +435,23 @@ function updateSetting<Key extends keyof SimulationSettings>(
   emit('updateSettings', {
     ...props.settings,
     [key]: value,
+  });
+}
+
+function normalizeOptionalNumber(value: number | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function clearFilters() {
+  emit('updateSettings', {
+    ...props.settings,
+    search: '',
+    invertSearch: false,
+    altitudeMinKm: undefined,
+    altitudeMaxKm: undefined,
+    invertAltitude: false,
+    selectedOrbitPlaneIds: [],
+    invertOrbitPlanes: false,
   });
 }
 

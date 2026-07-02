@@ -7,7 +7,7 @@
       :highlighted-ids="highlightedSatelliteIds"
       :ground-stations="groundStations"
       :ground-links="groundLinks"
-      :satellite-links="backendSatelliteLinks"
+      :satellite-links="visibleSatelliteLinks"
       :focused-satellite-id="focusedSatelliteId"
       :focused-station-id="focusedStationId"
       :focus-satellite-zoom="effectiveFocusSatelliteZoom"
@@ -24,8 +24,9 @@
     </section>
 
     <SatelliteList
-      :satellites="displayedSatellites"
+      :satellites="filteredSatellites"
       :selected-satellites="selectedOrbitSatellites"
+      :orbit-plane-options="orbitPlaneOptions"
       :ground-stations="groundStations"
       :settings="settings"
       :current-time="renderTime"
@@ -46,12 +47,19 @@
       :satellite="selectedSatellite"
       @close="detailVisible = false"
     />
+
+    <GroundStationDetailPanel
+      :visible="stationDetailVisible"
+      :station="selectedStation"
+      @close="stationDetailVisible = false"
+    />
   </main>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import CesiumGlobe from '@/features/starlink/components/CesiumGlobe.vue';
+import GroundStationDetailPanel from '@/features/starlink/components/GroundStationDetailPanel.vue';
 import SatelliteDetailPanel from '@/features/starlink/components/SatelliteDetailPanel.vue';
 import SatelliteList from '@/features/starlink/components/SatelliteList.vue';
 import { useSimulationClock } from '@/features/starlink/composables/useSimulationClock';
@@ -77,16 +85,24 @@ const settings = reactive<SimulationSettings>({
   customTimeEnabled: false,
   showOrbits: true,
   showLabels: true,
-  focusSatelliteZoom: true,
-  showSatelliteStatus: true,
+  focusSelection: true,
+  showSelectionDetails: true,
   useLocalGroundLinks: false,
+  hideLinksForFilteredSatellites: true,
   search: '',
+  invertSearch: false,
+  altitudeMinKm: undefined,
+  altitudeMaxKm: undefined,
+  invertAltitude: false,
+  selectedOrbitPlaneIds: [],
+  invertOrbitPlanes: false,
 });
 const selectedSatelliteId = ref<string>();
 const selectedStationId = ref<string>();
 const focusedSatelliteOverrideId = ref<string>();
 const frontOnlySatelliteFocus = ref(false);
 const detailVisible = ref(false);
+const stationDetailVisible = ref(false);
 const visibleOrbitIds = ref<string[]>([]);
 const groundStations = ref<GroundStation[]>(mockGroundStations);
 const backendGroundLinks = ref<SatelliteGroundLink[]>([]);
@@ -155,18 +171,6 @@ onUnmounted(() => {
   satelliteDataSource.disconnect();
 });
 
-const filteredRecords = computed(() => {
-  const search = settings.search.trim().toLowerCase();
-  if (!search) {
-    return records;
-  }
-
-  return records.filter(
-    (record) => record.name.toLowerCase().includes(search) || record.id.includes(search),
-  );
-});
-
-const visibleRecords = computed(() => filteredRecords.value);
 const renderTime = computed(() => {
   if (settings.customTimeEnabled) {
     return now.value;
@@ -184,18 +188,91 @@ const renderTime = computed(() => {
     : now.value;
 });
 const renderIsoTime = computed(() => renderTime.value.toISOString().replace(/\.\d{3}Z$/, ''));
-const displayedSatellites = computed(() => propagateMany(visibleRecords.value, renderTime.value));
+const orbitPlaneOptions = Array.from(new Set(records.map((record) => record.orbitPlaneId))).sort(
+  (left, right) => left.localeCompare(right, undefined, { numeric: true }),
+);
+const hasActiveSatelliteFilters = computed(
+  () =>
+    Boolean(settings.search.trim()) ||
+    Number.isFinite(settings.altitudeMinKm) ||
+    Number.isFinite(settings.altitudeMaxKm) ||
+    settings.selectedOrbitPlaneIds.length > 0,
+);
+const allDisplayedSatellites = computed(() => propagateMany(records, renderTime.value));
+const filteredSatellites = computed(() => {
+  const search = settings.search.trim().toLowerCase();
+  const selectedPlanes = new Set(settings.selectedOrbitPlaneIds);
+  const hasAltitudeFilter =
+    Number.isFinite(settings.altitudeMinKm) || Number.isFinite(settings.altitudeMaxKm);
+
+  return allDisplayedSatellites.value.filter((satellite) => {
+    const textMatches =
+      !search ||
+      satellite.name.toLowerCase().includes(search) ||
+      satellite.id.toLowerCase().includes(search);
+    if (search && (settings.invertSearch ? textMatches : !textMatches)) {
+      return false;
+    }
+
+    const altitudeMatches =
+      (!Number.isFinite(settings.altitudeMinKm) ||
+        satellite.altitudeKm >= settings.altitudeMinKm!) &&
+      (!Number.isFinite(settings.altitudeMaxKm) ||
+        satellite.altitudeKm <= settings.altitudeMaxKm!);
+    if (
+      hasAltitudeFilter &&
+      (settings.invertAltitude ? altitudeMatches : !altitudeMatches)
+    ) {
+      return false;
+    }
+
+    const orbitMatches = selectedPlanes.has(satellite.orbitPlaneId);
+    if (
+      selectedPlanes.size > 0 &&
+      (settings.invertOrbitPlanes ? orbitMatches : !orbitMatches)
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+});
+const filteredSatelliteIds = computed(
+  () => new Set(filteredSatellites.value.map((satellite) => satellite.id)),
+);
+const connectedSatelliteIds = computed(() => {
+  const ids = new Set(backendGroundLinks.value.map((link) => link.satelliteId));
+  backendSatelliteLinks.value.forEach((link) => {
+    ids.add(link.satelliteAId);
+    ids.add(link.satelliteBId);
+  });
+  return ids;
+});
+const displayedSatellites = computed(() => {
+  if (settings.hideLinksForFilteredSatellites) {
+    return filteredSatellites.value;
+  }
+
+  return allDisplayedSatellites.value.filter(
+    (satellite) =>
+      filteredSatelliteIds.value.has(satellite.id) || connectedSatelliteIds.value.has(satellite.id),
+  );
+});
 const displayedSatelliteById = computed(() =>
   new Map(displayedSatellites.value.map((satellite) => [satellite.id, satellite])),
 );
 const focusedSatelliteId = computed(() =>
-  focusedSatelliteOverrideId.value ??
-  (settings.search.trim() ? displayedSatellites.value[0]?.id : undefined),
+  settings.focusSelection
+    ? focusedSatelliteOverrideId.value ??
+      (hasActiveSatelliteFilters.value ? filteredSatellites.value[0]?.id : undefined)
+    : undefined,
 );
 const effectiveFocusSatelliteZoom = computed(
-  () => settings.focusSatelliteZoom && !frontOnlySatelliteFocus.value,
+  () => settings.focusSelection && !frontOnlySatelliteFocus.value,
 );
-const focusedStationId = computed(() => selectedStationId.value);
+const focusedStationId = computed(() =>
+  settings.focusSelection ? selectedStationId.value : undefined,
+);
 const highlightedSatelliteIds = computed(() => {
   const ids = new Set(visibleOrbitIds.value);
 
@@ -203,31 +280,35 @@ const highlightedSatelliteIds = computed(() => {
     displayedSatellites.value.forEach((satellite) => ids.add(satellite.id));
   }
 
-  if (!settings.useLocalGroundLinks) {
-    backendLinkedSatelliteIds.value.forEach((id) => ids.add(id));
-  }
-
-  backendSatelliteLinks.value.forEach((link) => {
-    ids.add(link.satelliteAId);
-    ids.add(link.satelliteBId);
-  });
-
   return Array.from(ids);
 });
 const fallbackGroundLinks = computed(() =>
   createNearestGroundLinks(displayedSatellites.value, groundStations.value, highlightedSatelliteIds.value),
 );
 const groundLinks = computed(() =>
-  settings.useLocalGroundLinks ? fallbackGroundLinks.value : backendGroundLinks.value,
+  settings.useLocalGroundLinks
+    ? fallbackGroundLinks.value
+    : settings.hideLinksForFilteredSatellites
+      ? backendGroundLinks.value.filter((link) => filteredSatelliteIds.value.has(link.satelliteId))
+      : backendGroundLinks.value,
+);
+const visibleSatelliteLinks = computed(() =>
+  settings.hideLinksForFilteredSatellites
+    ? backendSatelliteLinks.value.filter(
+        (link) =>
+          filteredSatelliteIds.value.has(link.satelliteAId) &&
+          filteredSatelliteIds.value.has(link.satelliteBId),
+      )
+    : backendSatelliteLinks.value,
 );
 const selectedOrbitSatelliteIds = computed(() => {
   const ids = new Set(visibleOrbitIds.value);
 
   if (!settings.useLocalGroundLinks) {
-    backendLinkedSatelliteIds.value.forEach((id) => ids.add(id));
+    groundLinks.value.forEach((link) => ids.add(link.satelliteId));
   }
 
-  backendSatelliteLinks.value.forEach((link) => {
+  visibleSatelliteLinks.value.forEach((link) => {
     ids.add(link.satelliteAId);
     ids.add(link.satelliteBId);
   });
@@ -237,13 +318,18 @@ const selectedOrbitSatelliteIds = computed(() => {
 const selectedSatellite = computed(() =>
   selectedSatelliteId.value ? displayedSatelliteById.value.get(selectedSatelliteId.value) : undefined,
 );
+const selectedStation = computed(() =>
+  selectedStationId.value
+    ? groundStations.value.find((station) => station.id === selectedStationId.value)
+    : undefined,
+);
 const selectedOrbitSatellites = computed(() =>
   selectedOrbitSatelliteIds.value
     .map((id) => displayedSatelliteById.value.get(id))
     .filter((satellite): satellite is SatellitePoint => Boolean(satellite)),
 );
 const visibleOrbitRecordIds = computed(() => {
-  return selectedOrbitSatelliteIds.value;
+  return selectedOrbitSatelliteIds.value.filter((id) => displayedSatelliteById.value.has(id));
 });
 const visibleOrbitRecords = computed(() =>
   settings.showOrbits
@@ -253,6 +339,7 @@ const visibleOrbitRecords = computed(() =>
     : [],
 );
 function toggleSatelliteOrbit(satellite: SatellitePoint) {
+  stationDetailVisible.value = false;
   selectedSatelliteId.value = satellite.id;
   focusedSatelliteOverrideId.value = satellite.id;
   frontOnlySatelliteFocus.value = false;
@@ -260,6 +347,7 @@ function toggleSatelliteOrbit(satellite: SatellitePoint) {
 }
 
 function toggleSatelliteOrbitFromGlobe(satellite: SatellitePoint) {
+  stationDetailVisible.value = false;
   selectedSatelliteId.value = satellite.id;
   focusedSatelliteOverrideId.value = undefined;
   frontOnlySatelliteFocus.value = false;
@@ -267,10 +355,11 @@ function toggleSatelliteOrbitFromGlobe(satellite: SatellitePoint) {
 }
 
 function focusSelectedSatellite(satellite: SatellitePoint) {
+  stationDetailVisible.value = false;
   selectedSatelliteId.value = satellite.id;
   focusedSatelliteOverrideId.value = satellite.id;
   frontOnlySatelliteFocus.value = true;
-  detailVisible.value = settings.showSatelliteStatus;
+  detailVisible.value = settings.showSelectionDetails;
 }
 
 function toggleSatelliteOrbitState(satellite: SatellitePoint) {
@@ -282,7 +371,7 @@ function toggleSatelliteOrbitState(satellite: SatellitePoint) {
   }
 
   visibleOrbitIds.value = [...visibleOrbitIds.value, satellite.id];
-  detailVisible.value = settings.showSatelliteStatus;
+  detailVisible.value = settings.showSelectionDetails;
 }
 
 function removeSatelliteOrbit(satellite: SatellitePoint) {
@@ -358,8 +447,9 @@ function updateSettings(nextSettings: SimulationSettings) {
     frontOnlySatelliteFocus.value = false;
   }
   Object.assign(settings, nextSettings);
-  if (!settings.showSatelliteStatus) {
+  if (!settings.showSelectionDetails) {
     detailVisible.value = false;
+    stationDetailVisible.value = false;
   }
 }
 
@@ -375,6 +465,8 @@ function resetSystemTime() {
 
 function focusGroundStation(station: GroundStation) {
   selectedStationId.value = station.id;
+  detailVisible.value = false;
+  stationDetailVisible.value = settings.showSelectionDetails;
 }
 </script>
 

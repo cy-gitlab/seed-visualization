@@ -11,12 +11,19 @@ type PlannedShellOrbitRecordJson = {
   mean_anomaly_deg: number;
   mean_motion_rev_per_day: number;
   norad_id: number;
+  plane_index: number;
   raan_deg: number;
   satellite_name: string;
 };
 
 type PlannedShellOrbitDataJson = {
   selected_records?: PlannedShellOrbitRecordJson[];
+  shell_selection?: {
+    plane_manifest?: Array<{
+      norad_ids: number[];
+      plane_id: string;
+    }>;
+  };
 };
 
 function isPlannedShellOrbitRecord(value: unknown): value is PlannedShellOrbitRecordJson {
@@ -26,6 +33,7 @@ function isPlannedShellOrbitRecord(value: unknown): value is PlannedShellOrbitRe
     record &&
       typeof record.satellite_name === 'string' &&
       typeof record.norad_id === 'number' &&
+      typeof record.plane_index === 'number' &&
       typeof record.epoch_utc === 'string' &&
       typeof record.inclination_deg === 'number' &&
       typeof record.eccentricity === 'number' &&
@@ -38,11 +46,15 @@ function isPlannedShellOrbitRecord(value: unknown): value is PlannedShellOrbitRe
   );
 }
 
-function toPlannedOrbitRecord(record: PlannedShellOrbitRecordJson): PlannedOrbitRecord {
+function toPlannedOrbitRecord(
+  record: PlannedShellOrbitRecordJson,
+  orbitPlaneId: string,
+): PlannedOrbitRecord {
   return {
     id: String(record.norad_id),
     name: record.satellite_name,
     noradId: record.norad_id,
+    orbitPlaneId,
     epochUtc: record.epoch_utc,
     inclinationDeg: record.inclination_deg,
     eccentricity: record.eccentricity,
@@ -64,5 +76,16 @@ export function parsePlannedOrbitRecords(
     throw new Error('planned_shell_orbit.json selected_records contains invalid orbit records.');
   }
 
-  return records.map(toPlannedOrbitRecord);
+  const orbitPlaneByNoradId = new Map<number, string>();
+  data.shell_selection?.plane_manifest?.forEach((plane) => {
+    plane.norad_ids.forEach((noradId) => orbitPlaneByNoradId.set(noradId, plane.plane_id));
+  });
+
+  return records.map((record) =>
+    toPlannedOrbitRecord(
+      record,
+      orbitPlaneByNoradId.get(record.norad_id) ??
+        `plane-${String(record.plane_index).padStart(3, '0')}`,
+    ),
+  );
 }

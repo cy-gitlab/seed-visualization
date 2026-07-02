@@ -69,6 +69,83 @@
   }
 }
 
+.filter-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.satellite-filters {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border: 1px solid rgba(141, 217, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(8, 22, 32, 0.76);
+
+  summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #c9d9e5;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+
+    em {
+      color: #65ff6a;
+      font-style: normal;
+      font-weight: 500;
+    }
+  }
+
+  &[open] summary {
+    margin-bottom: 10px;
+  }
+}
+
+.filter-section {
+  display: grid;
+  gap: 7px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(141, 217, 255, 0.09);
+
+  :deep(.el-select),
+  :deep(.el-input-number) {
+    width: 100%;
+  }
+}
+
+.filter-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #9db4c3;
+  font-size: 12px;
+}
+
+.filter-label {
+  border-bottom: 1px dotted rgba(157, 180, 195, 0.65);
+  cursor: help;
+}
+
+.altitude-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+
+  > span {
+    color: #718999;
+    font-size: 11px;
+  }
+}
+
+.clear-filters {
+  width: 100%;
+  margin-top: 4px;
+}
+
 .selected-satellites {
   flex: 1;
   min-height: 0;
