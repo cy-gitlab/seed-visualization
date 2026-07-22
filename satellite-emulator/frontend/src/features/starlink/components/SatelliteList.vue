@@ -1,36 +1,36 @@
 <template>
-  <section class="satellite-list">
-    <header>
-      <button type="button" :class="{ active: activeTab === 'all' }" @click="activeTab = 'all'">
+  <section class="satellite-list" :class="{ embedded }">
+    <header v-if="!hideHeader">
+      <button type="button" :class="{ active: currentTab === 'all' }" @click="setActiveTab('all')">
         Satellites
         <strong>{{ satellites.length.toLocaleString() }}</strong>
       </button>
       <button
         type="button"
-        :class="{ active: activeTab === 'selected' }"
-        @click="activeTab = 'selected'"
+        :class="{ active: currentTab === 'selected' }"
+        @click="setActiveTab('selected')"
       >
         Selected
         <strong>{{ selectedSatellites.length.toLocaleString() }}</strong>
       </button>
       <button
         type="button"
-        :class="{ active: activeTab === 'stations' }"
-        @click="activeTab = 'stations'"
+        :class="{ active: currentTab === 'stations' }"
+        @click="setActiveTab('stations')"
       >
         Stations
         <strong>{{ filteredStations.length.toLocaleString() }}</strong>
       </button>
       <button
         type="button"
-        :class="{ active: activeTab === 'settings' }"
-        @click="activeTab = 'settings'"
+        :class="{ active: currentTab === 'settings' }"
+        @click="setActiveTab('settings')"
       >
         Settings
       </button>
     </header>
 
-    <section v-if="activeTab === 'all'" class="tab-panel satellite-tab">
+    <section v-if="currentTab === 'all'" class="tab-panel satellite-tab">
       <div class="filter-input-row">
         <el-input
           :model-value="settings.search"
@@ -58,6 +58,7 @@
               content="Both boundary values are included: min ≤ altitude ≤ max."
               placement="top"
               :show-after="300"
+              popper-class="starlink-multiline-tooltip"
             >
               <span class="filter-label">Altitude (km, inclusive)</span>
             </el-tooltip>
@@ -89,7 +90,7 @@
 
         <div class="filter-section">
           <div class="filter-heading">
-            <span>Orbit planes</span>
+            <span>Plane filter</span>
             <el-checkbox
               :model-value="settings.invertOrbitPlanes"
               @update:model-value="updateSetting('invertOrbitPlanes', Boolean($event))"
@@ -103,7 +104,7 @@
             filterable
             collapse-tags
             :max-collapse-tags="1"
-            placeholder="All orbit planes"
+            placeholder="Planes in visible shells"
             @update:model-value="updateSetting('selectedOrbitPlaneIds', $event)"
           >
             <el-option
@@ -141,7 +142,7 @@
       </div>
     </section>
 
-    <section v-if="activeTab === 'selected'" class="selected-satellites">
+    <section v-if="currentTab === 'selected'" class="selected-satellites">
       <div v-if="selectedSatellites.length" class="selected-satellites-title">
         <span>Orbits visible</span>
         <button type="button" @click="$emit('removeAll')">Clear all</button>
@@ -173,15 +174,28 @@
       <p v-if="!selectedSatellites.length" class="empty-selected">No selected satellites</p>
     </section>
 
-    <section v-if="activeTab === 'stations'" class="ground-station-list">
+    <section v-if="currentTab === 'stations'" class="ground-station-list">
       <el-input v-model="stationSearch" clearable placeholder="Search station, city, or ID" />
+
+      <div class="station-filter-actions">
+        <span>
+          {{ connectedStationIds.length
+            ? `${selectedConnectedStationCount} / ${connectedStationIds.length} linked selected`
+            : `${selectedStationIds.size} / ${groundStations.length} selected` }}
+        </span>
+        <div>
+          <el-button text size="small" @click="selectAllFilteredStations">Select all</el-button>
+          <el-button text size="small" @click="invertFilteredStations">Invert</el-button>
+        </div>
+      </div>
 
       <div class="ground-station-items">
         <article
           v-for="station in filteredStations"
           :key="station.id"
           class="ground-station-row"
-          @click="emit('stationSelect', station)"
+          :class="{ selected: selectedStationIds.has(station.id) }"
+          @click="toggleStationSelection(station)"
         >
           <span>
             <strong>{{ station.name }}</strong>
@@ -194,11 +208,13 @@
       </div>
     </section>
 
-    <section v-if="activeTab === 'settings'" class="settings-tab">
+    <section v-if="currentTab === 'settings'" class="settings-tab">
       <div class="time-control">
         <div class="time-control-heading">
           <span>System time</span>
-          <small>{{ settings.customTimeEnabled ? 'Custom' : 'Automatic' }}</small>
+          <small>
+            {{ settings.paused ? 'Paused' : settings.customTimeEnabled ? 'Custom' : 'Automatic' }}
+          </small>
         </div>
         <label for="simulation-timestamp">Unix timestamp (seconds)</label>
         <el-input-number
@@ -216,6 +232,12 @@
             Apply
           </el-button>
           <el-button @click="resetSystemTime">Use current time</el-button>
+          <el-button
+            :type="settings.paused ? 'success' : 'warning'"
+            @click="updateSetting('paused', !settings.paused)"
+          >
+            {{ settings.paused ? 'Resume' : 'Pause' }}
+          </el-button>
         </div>
       </div>
 
@@ -224,47 +246,97 @@
         <el-segmented
           :model-value="settings.speed"
           :options="speedOptions"
+          :disabled="speedDisabled"
           @update:model-value="updateSetting('speed', Number($event))"
         />
       </div>
 
       <div class="switch-grid">
-        <el-tooltip content="Show orbit paths for selected or connected satellites." placement="top" :show-after="300">
+        <el-tooltip
+          content="Show or hide satellite nodes<br/>on the globe."
+          placement="top"
+          :show-after="300"
+          raw-content
+          popper-class="starlink-multiline-tooltip"
+        >
+          <el-switch
+            :model-value="settings.showSatellites"
+            active-text="Show satellites"
+            @update:model-value="updateSetting('showSatellites', Boolean($event))"
+          />
+        </el-tooltip>
+        <el-tooltip
+          content="Show or hide ground station<br/>nodes on the globe."
+          placement="top"
+          :show-after="300"
+          raw-content
+          popper-class="starlink-multiline-tooltip"
+        >
+          <el-switch
+            :model-value="settings.showGroundStations"
+            active-text="Show ground stations"
+            @update:model-value="updateSetting('showGroundStations', Boolean($event))"
+          />
+        </el-tooltip>
+        <el-tooltip
+          content="Show orbit paths for selected<br/>or connected satellites."
+          placement="top"
+          :show-after="300"
+          raw-content
+          popper-class="starlink-multiline-tooltip"
+        >
           <el-switch
             :model-value="settings.showOrbits"
             active-text="Orbits"
             @update:model-value="updateSetting('showOrbits', Boolean($event))"
           />
         </el-tooltip>
-        <el-tooltip content="Show name labels for selected or highlighted satellites." placement="top" :show-after="300">
+        <el-tooltip
+          content="Show name labels for selected<br/>or highlighted satellites."
+          placement="top"
+          :show-after="300"
+          raw-content
+          popper-class="starlink-multiline-tooltip"
+        >
           <el-switch
             :model-value="settings.showLabels"
             active-text="Labels"
             @update:model-value="updateSetting('showLabels', Boolean($event))"
           />
         </el-tooltip>
-        <el-tooltip content="Move and zoom the camera to a selected satellite or ground station." placement="top" :show-after="300">
-          <el-switch
-            :model-value="settings.focusSelection"
-            active-text="Focus selection"
-            @update:model-value="updateSetting('focusSelection', Boolean($event))"
-          />
-        </el-tooltip>
-        <el-tooltip content="Show details for the selected satellite or ground station." placement="top" :show-after="300">
+        <el-tooltip
+          content="Show details when hovering over a satellite<br/>or ground station."
+          placement="top"
+          :show-after="300"
+          raw-content
+          popper-class="starlink-multiline-tooltip"
+        >
           <el-switch
             :model-value="settings.showSelectionDetails"
-            active-text="Selection details"
+            active-text="Hover details"
             @update:model-value="updateSetting('showSelectionDetails', Boolean($event))"
           />
         </el-tooltip>
-        <el-tooltip content="Use locally calculated nearest-station links instead of backend ground links." placement="top" :show-after="300">
+        <el-tooltip
+          content="Use locally calculated nearest-station links<br/>instead of backend ground links."
+          placement="top"
+          :show-after="300"
+          raw-content
+          popper-class="starlink-multiline-tooltip"
+        >
           <el-switch
             :model-value="settings.useLocalGroundLinks"
             active-text="Local links"
             @update:model-value="updateSetting('useLocalGroundLinks', Boolean($event))"
           />
         </el-tooltip>
-        <el-tooltip content="Hide every link involving a satellite that is excluded by the current filters." placement="top" :show-after="300">
+        <el-tooltip
+          content="Hide every link involving a satellite<br/>excluded by the current filters."
+          placement="top"
+          :show-after="300"
+          raw-content
+          popper-class="starlink-multiline-tooltip"
+        >
           <el-switch
             :model-value="settings.hideLinksForFilteredSatellites"
             active-text="Hide filtered links"
@@ -289,9 +361,15 @@ const props = defineProps<{
   selectedSatellites: SatellitePoint[];
   orbitPlaneOptions: string[];
   groundStations: GroundStation[];
+  selectedStationIds: string[];
+  connectedStationIds: string[];
   settings: SimulationSettings;
   currentTime: Date;
   selectedId?: string;
+  embedded?: boolean;
+  activeTab?: TabName;
+  hideHeader?: boolean;
+  speedDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -299,8 +377,8 @@ const emit = defineEmits<{
   focusSelected: [satellite: SatellitePoint];
   remove: [satellite: SatellitePoint];
   removeAll: [];
-  stationSelect: [station: GroundStation];
   stationFocus: [station: GroundStation];
+  stationSelectionChange: [stationIds: string[]];
   updateSettings: [settings: SimulationSettings];
   setSystemTime: [timestampMs: number];
   resetSystemTime: [];
@@ -313,6 +391,7 @@ const overscan = 8;
 const bodyRef = ref<HTMLElement>();
 const scrollTop = ref(0);
 const activeTab = ref<TabName>('all');
+const currentTab = computed(() => props.activeTab ?? activeTab.value);
 const stationSearch = ref('');
 const timestampInput = ref<number>();
 const maxTimestampSeconds = Math.floor(8_640_000_000_000_000 / 1000);
@@ -353,6 +432,10 @@ const timestampPreview = computed(() => {
 const selectedSatelliteIds = computed(
   () => new Set(props.selectedSatellites.map((satellite) => satellite.id)),
 );
+const selectedStationIds = computed(() => new Set(props.selectedStationIds));
+const selectedConnectedStationCount = computed(() =>
+  props.connectedStationIds.filter((stationId) => selectedStationIds.value.has(stationId)).length,
+);
 const activeFilterCount = computed(
   () =>
     Number(Boolean(props.settings.search.trim())) +
@@ -380,6 +463,10 @@ const visibleSatellites = computed(() =>
 watch(
   () => props.selectedSatellites.length,
   (count, previousCount) => {
+    if (props.activeTab) {
+      return;
+    }
+
     if (count > 0 && previousCount === 0) {
       activeTab.value = 'selected';
     }
@@ -408,7 +495,7 @@ watch(
   },
 );
 
-watch(activeTab, (tab) => {
+watch(currentTab, (tab) => {
   if (tab === 'settings') {
     syncTimestampInput();
   }
@@ -426,6 +513,10 @@ watch(
 
 function handleScroll(event: Event) {
   scrollTop.value = (event.currentTarget as HTMLElement).scrollTop;
+}
+
+function setActiveTab(tab: TabName) {
+  activeTab.value = tab;
 }
 
 function updateSetting<Key extends keyof SimulationSettings>(
@@ -453,6 +544,51 @@ function clearFilters() {
     selectedOrbitPlaneIds: [],
     invertOrbitPlanes: false,
   });
+}
+
+function toggleStationSelection(station: GroundStation) {
+  const nextStationIds = new Set(props.selectedStationIds);
+  const shouldFocus = !nextStationIds.has(station.id);
+  if (nextStationIds.has(station.id)) {
+    nextStationIds.delete(station.id);
+  } else {
+    nextStationIds.add(station.id);
+  }
+  emit('stationSelectionChange', Array.from(nextStationIds));
+  if (shouldFocus) {
+    emit('stationFocus', station);
+  }
+}
+
+function selectAllFilteredStations() {
+  if (props.connectedStationIds.length) {
+    emit('stationSelectionChange', [...props.connectedStationIds]);
+    return;
+  }
+
+  const nextStationIds = new Set(props.selectedStationIds);
+  filteredStations.value.forEach((station) => nextStationIds.add(station.id));
+  emit('stationSelectionChange', Array.from(nextStationIds));
+}
+
+function invertFilteredStations() {
+  if (props.connectedStationIds.length) {
+    const nextStationIds = props.connectedStationIds.filter(
+      (stationId) => !selectedStationIds.value.has(stationId),
+    );
+    emit('stationSelectionChange', nextStationIds);
+    return;
+  }
+
+  const nextStationIds = new Set(props.selectedStationIds);
+  filteredStations.value.forEach((station) => {
+    if (nextStationIds.has(station.id)) {
+      nextStationIds.delete(station.id);
+    } else {
+      nextStationIds.add(station.id);
+    }
+  });
+  emit('stationSelectionChange', Array.from(nextStationIds));
 }
 
 function syncTimestampInput() {

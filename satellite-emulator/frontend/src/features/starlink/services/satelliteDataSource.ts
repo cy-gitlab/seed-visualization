@@ -4,12 +4,17 @@ import type {
   InterSatelliteLink,
   LinksRequest,
   LinkUpdateState,
+  NetworkLinkFrame,
+  NetworkLinksRequest,
+  NetworkNodeRef,
+  NetworkPathUpdateState,
   SatelliteGroundLink,
   SatelliteGroundLinkFrame,
   SatelliteLinkFrame,
+  SatelliteLinksRequest,
 } from '@/features/starlink/types';
 
-export type SatelliteDataEvent = 'ground-links' | 'satellite-links' | 'dead';
+export type SatelliteDataEvent = 'ground-links' | 'satellite-links' | 'network-links' | 'dead';
 
 type LinkUpdatesMessage = {
   type: 'SATELLITE_LINK_UPDATES';
@@ -17,9 +22,10 @@ type LinkUpdatesMessage = {
 };
 
 type LinkUpdatePlaybackFrame = {
-  update: LinkUpdateState;
-  offsetMs: number;
-  holdMs: number;
+  update: LinkUpdateState | NetworkPathUpdateState;
+  requestType: 'satellite' | 'network';
+  startTimeMs: number;
+  endTimeMs: number;
   requestIndex: number;
   groupIndex: number;
 };
@@ -68,16 +74,65 @@ function isLinkUpdateState(value: unknown): value is LinkUpdateState {
   );
 }
 
-function isLinksRequest(value: unknown): value is LinksRequest {
-  const request = value as LinksRequest;
+function isNetworkNodeRef(value: unknown): value is NetworkNodeRef {
+  const node = value as NetworkNodeRef;
+
+  return Boolean(
+    node &&
+      typeof node.id === 'string' &&
+      typeof node.type === 'string' &&
+      (node.latencyMs === undefined || typeof node.latencyMs === 'number') &&
+      (node.packetLoss === undefined || typeof node.packetLoss === 'number'),
+  );
+}
+
+function isNetworkPathUpdateState(value: unknown): value is NetworkPathUpdateState {
+  const update = value as NetworkPathUpdateState;
+
+  return Boolean(
+    update &&
+      (update.id === undefined || typeof update.id === 'string') &&
+      Array.isArray(update.forwardPath) &&
+      update.forwardPath.every(isNetworkNodeRef) &&
+      Array.isArray(update.returnPath) &&
+      update.returnPath.every(isNetworkNodeRef),
+  );
+}
+
+function hasValidTimelineFields(value: unknown): value is { interval: string; timestamp: string } {
+  const request = value as { interval: string; timestamp: string };
 
   return Boolean(
     request &&
       typeof request.interval === 'string' &&
-      typeof request.timestamp === 'string' &&
+      typeof request.timestamp === 'string',
+  );
+}
+
+function isSatelliteLinksRequest(value: unknown): value is SatelliteLinksRequest {
+  const request = value as SatelliteLinksRequest;
+
+  return Boolean(
+    hasValidTimelineFields(request) &&
+      (request.type === undefined || request.type === 'satellite') &&
       Array.isArray(request.links) &&
       request.links.every(isLinkUpdateState),
   );
+}
+
+function isNetworkLinksRequest(value: unknown): value is NetworkLinksRequest {
+  const request = value as NetworkLinksRequest;
+
+  return Boolean(
+    hasValidTimelineFields(request) &&
+      request.type === 'network' &&
+      Array.isArray(request.links) &&
+      request.links.every(isNetworkPathUpdateState),
+  );
+}
+
+function isLinksRequest(value: unknown): value is LinksRequest {
+  return isSatelliteLinksRequest(value) || isNetworkLinksRequest(value);
 }
 
 function isLinkUpdatesMessage(value: unknown): value is LinkUpdatesMessage {
@@ -99,7 +154,25 @@ function parseMilliseconds(value: string) {
       ? Number(trimmedValue.slice(0, -1)) * 1000
       : Number(trimmedValue);
 
-  return Number.isFinite(milliseconds) && milliseconds >= 0 ? milliseconds : 0;
+  return Number.isFinite(milliseconds) && milliseconds > 0 ? milliseconds : undefined;
+}
+
+function parseTimestamp(value: string) {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return undefined;
+  }
+
+  const numericValue = Number(trimmedValue);
+  if (Number.isFinite(numericValue)) {
+    const milliseconds = Math.abs(numericValue) >= 1_000_000_000_000
+      ? numericValue
+      : numericValue * 1000;
+    return Number.isFinite(milliseconds) ? milliseconds : undefined;
+  }
+
+  const milliseconds = Date.parse(trimmedValue);
+  return Number.isFinite(milliseconds) ? milliseconds : undefined;
 }
 
 function toSatelliteGroundLinks(links: GroundLinkState[]): SatelliteGroundLink[] {
@@ -110,19 +183,21 @@ function toSatelliteGroundLinks(links: GroundLinkState[]): SatelliteGroundLink[]
   }));
 }
 
-function normalizeSimulationSpeed(value: number) {
-  return Number.isFinite(value) && value > 0 ? value : 1;
-}
-
 export class SatelliteDataSource {
   private _socket?: WebSocket;
   private _connected = false;
-  private _linkUpdateTimers: number[] = [];
+  private _playbackFrames: LinkUpdatePlaybackFrame[] = [];
+  private _activeFrameIndex = -1;
+  private _timelineCompleted = true;
   private _groundLinksEventHandler: (data: SatelliteGroundLinkFrame) => void = () => undefined;
   private _satelliteLinksEventHandler: (data: SatelliteLinkFrame) => void = () => undefined;
+  private _networkLinksEventHandler: (data: NetworkLinkFrame) => void = () => undefined;
   private _errorHandler: (error: Event | CloseEvent | unknown) => void = () => undefined;
 
-  constructor(private readonly _getSimulationSpeed: () => number = () => 1) {}
+  constructor(
+    private readonly _getSimulationTime: () => Date,
+    private readonly _synchronizeSimulationTime: (time: Date) => void,
+  ) {}
 
   connect() {
     if (this._connected) {
@@ -161,13 +236,14 @@ export class SatelliteDataSource {
 
   disconnect() {
     this._connected = false;
-    this.clearLinkUpdateTimers();
+    this.clearTimeline();
     this._socket?.close();
     this._socket = undefined;
   }
 
   on(eventName: 'ground-links', callback: (data: SatelliteGroundLinkFrame) => void): void;
   on(eventName: 'satellite-links', callback: (data: SatelliteLinkFrame) => void): void;
+  on(eventName: 'network-links', callback: (data: NetworkLinkFrame) => void): void;
   on(eventName: 'dead', callback: (data: unknown) => void): void;
   on(eventName: SatelliteDataEvent, callback: (data: any) => void = () => undefined) {
     switch (eventName) {
@@ -177,102 +253,174 @@ export class SatelliteDataSource {
       case 'satellite-links':
         this._satelliteLinksEventHandler = callback as (data: SatelliteLinkFrame) => void;
         break;
+      case 'network-links':
+        this._networkLinksEventHandler = callback as (data: NetworkLinkFrame) => void;
+        break;
       case 'dead':
         this._errorHandler = callback;
         break;
     }
   }
 
-  private clearLinkUpdateTimers() {
-    this._linkUpdateTimers.forEach((timer) => window.clearTimeout(timer));
-    this._linkUpdateTimers = [];
+  advanceTo(simulationTime: Date) {
+    if (!this._playbackFrames.length) {
+      return;
+    }
+
+    const simulationTimeMs = simulationTime.getTime();
+    let activeFrameIndex = -1;
+    for (let index = 0; index < this._playbackFrames.length; index += 1) {
+      const frame = this._playbackFrames[index];
+      if (simulationTimeMs >= frame.startTimeMs && simulationTimeMs < frame.endTimeMs) {
+        activeFrameIndex = index;
+      }
+    }
+
+    if (activeFrameIndex >= 0) {
+      this._timelineCompleted = false;
+      if (activeFrameIndex !== this._activeFrameIndex) {
+        this._activeFrameIndex = activeFrameIndex;
+        this.emitFrame(this._playbackFrames[activeFrameIndex]);
+      }
+      return;
+    }
+
+    const finalFrame = this._playbackFrames[this._playbackFrames.length - 1];
+    if (simulationTimeMs >= finalFrame.endTimeMs) {
+      if (!this._timelineCompleted) {
+        this._timelineCompleted = true;
+        this._activeFrameIndex = -1;
+        this.emitLinksCompleted(new Date(finalFrame.endTimeMs));
+      }
+      return;
+    }
+
+    if (this._activeFrameIndex !== -1 || this._timelineCompleted) {
+      this._timelineCompleted = false;
+      this._activeFrameIndex = -1;
+      this.emitEmptyFrame(simulationTime);
+    }
+  }
+
+  private clearTimeline() {
+    this._playbackFrames = [];
+    this._activeFrameIndex = -1;
+    this._timelineCompleted = true;
   }
 
   private scheduleLinkUpdates(requests: LinksRequest[]) {
-    this.clearLinkUpdateTimers();
-    const receivedAtMs = Date.now();
     const playbackFrames: LinkUpdatePlaybackFrame[] = [];
-    let offsetMs = 0;
+    this.emitEmptyFrame(this._getSimulationTime());
 
     requests.forEach((request, requestIndex) => {
       const intervalMs = parseMilliseconds(request.interval);
+      const requestStartTimeMs = parseTimestamp(request.timestamp);
+      if (intervalMs === undefined || requestStartTimeMs === undefined) {
+        throw new Error(
+          `Invalid link timeline at request ${requestIndex}: timestamp and interval are required.`,
+        );
+      }
 
       request.links.forEach((update, groupIndex) => {
+        const startTimeMs = requestStartTimeMs + groupIndex * intervalMs;
         playbackFrames.push({
           update,
-          offsetMs: offsetMs + groupIndex * intervalMs,
-          holdMs: intervalMs,
+          requestType: request.type === 'network' ? 'network' : 'satellite',
+          startTimeMs,
+          endTimeMs: startTimeMs + intervalMs,
           requestIndex,
           groupIndex,
         });
       });
-
-      offsetMs += request.links.length * intervalMs;
     });
 
     if (!playbackFrames.length) {
-      this.emitLinksCompleted(new Date(receivedAtMs));
+      this.clearTimeline();
+      this.emitLinksCompleted(this._getSimulationTime());
       return;
     }
 
-    this.playLinkUpdateFrame(playbackFrames, 0, receivedAtMs);
+    playbackFrames.sort((left, right) => left.startTimeMs - right.startTimeMs);
+    this._playbackFrames = playbackFrames;
+    this._activeFrameIndex = -1;
+    this._timelineCompleted = false;
+
+    const timelineStart = new Date(playbackFrames[0].startTimeMs);
+    this._synchronizeSimulationTime(timelineStart);
+    this.advanceTo(timelineStart);
   }
 
-  private playLinkUpdateFrame(
-    frames: LinkUpdatePlaybackFrame[],
-    index: number,
-    receivedAtMs: number,
-  ) {
-    const frame = frames[index];
-    const sampleTime = new Date(receivedAtMs + frame.offsetMs);
+  private emitFrame(frame: LinkUpdatePlaybackFrame) {
+    const sampleTime = new Date(frame.startTimeMs);
+    if (frame.requestType === 'network') {
+      this._groundLinksEventHandler({
+        links: [],
+        sampleTime,
+        requestIndex: frame.requestIndex,
+        groupIndex: frame.groupIndex,
+      });
+      this._satelliteLinksEventHandler({
+        links: [],
+        sampleTime,
+        requestIndex: frame.requestIndex,
+        groupIndex: frame.groupIndex,
+      });
+      this._networkLinksEventHandler({
+        links: [frame.update as NetworkPathUpdateState],
+        sampleTime,
+        requestIndex: frame.requestIndex,
+        groupIndex: frame.groupIndex,
+      });
+      return;
+    }
 
+    const update = frame.update as LinkUpdateState;
     this._groundLinksEventHandler({
-      links: toSatelliteGroundLinks(frame.update.groundLinks),
+      links: toSatelliteGroundLinks(update.groundLinks),
       sampleTime,
       requestIndex: frame.requestIndex,
       groupIndex: frame.groupIndex,
     });
     this._satelliteLinksEventHandler({
-      links: frame.update.satelliteLinks,
+      links: update.satelliteLinks,
       sampleTime,
       requestIndex: frame.requestIndex,
       groupIndex: frame.groupIndex,
     });
-
-    const nextFrame = frames[index + 1];
-    const nextDelayMs = nextFrame ? nextFrame.offsetMs - frame.offsetMs : frame.holdMs;
-    const nextAction = () => {
-      if (nextFrame) {
-        this.playLinkUpdateFrame(frames, index + 1, receivedAtMs);
-        return;
-      }
-
-      this.emitLinksCompleted(new Date(receivedAtMs + frame.offsetMs + frame.holdMs));
-    };
-
-    this._linkUpdateTimers.push(
-      window.setTimeout(nextAction, this.getPlaybackDelay(nextDelayMs)),
-    );
+    this._networkLinksEventHandler({
+      links: [],
+      sampleTime,
+      requestIndex: frame.requestIndex,
+      groupIndex: frame.groupIndex,
+    });
   }
 
   private emitLinksCompleted(sampleTime: Date) {
+    this.emitEmptyFrame(sampleTime, true);
+  }
+
+  private emitEmptyFrame(sampleTime: Date, completed = false) {
     this._groundLinksEventHandler({
       links: [],
       sampleTime,
       requestIndex: -1,
       groupIndex: -1,
-      completed: true,
+      completed,
     });
     this._satelliteLinksEventHandler({
       links: [],
       sampleTime,
       requestIndex: -1,
       groupIndex: -1,
-      completed: true,
+      completed,
+    });
+    this._networkLinksEventHandler({
+      links: [],
+      sampleTime,
+      requestIndex: -1,
+      groupIndex: -1,
+      completed,
     });
   }
 
-  private getPlaybackDelay(simulationDelayMs: number) {
-    return simulationDelayMs / normalizeSimulationSpeed(this._getSimulationSpeed());
-  }
 }

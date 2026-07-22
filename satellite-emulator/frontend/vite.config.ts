@@ -38,6 +38,8 @@ function createDevProxy(env: Record<string, string>) {
     const prefix = env.VITE_SERVER_URL_PREFIX || '/api/v1';
     const target = env.VITE_PROXY_ADDRESS;
     const emulatorTarget = env.VITE_PROXY_EMULATOR_ADDRESS;
+    const trafficObserverPrefix = env.VITE_TRAFFIC_OBSERVER_URL_PREFIX;
+    const trafficObserverTarget = env.VITE_TRAFFIC_OBSERVER_ADDRESS;
     const proxy: Record<string, ProxyOptions> = {};
 
     if (target) {
@@ -59,6 +61,15 @@ function createDevProxy(env: Record<string, string>) {
         proxy['/satellite-tiles'] = {
             target: env.VITE_SATELLITE_TILES_PROXY_ADDRESS,
             changeOrigin: true,
+        };
+    }
+
+    if (trafficObserverPrefix && trafficObserverTarget) {
+        proxy[trafficObserverPrefix] = {
+            target: trafficObserverTarget,
+            changeOrigin: true,
+            ws: true,
+            rewrite: (path: string) => path.replace(new RegExp(`^${escapeRegExp(trafficObserverPrefix)}`), ''),
         };
     }
 

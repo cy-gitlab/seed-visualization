@@ -23,6 +23,8 @@ RUN apt-get update \
     && rm -f /etc/nginx/sites-enabled/default \
     && rm -rf /var/lib/apt/lists/*
 
+COPY tmp /usr/src/app/tmp
+
 WORKDIR /usr/src/app/backend
 COPY --from=backend-builder /build/backend/package*.json ./
 COPY --from=backend-builder /build/backend/node_modules ./node_modules

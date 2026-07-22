@@ -42,6 +42,32 @@ services:
       - internet-map
     restart: unless-stopped
 
+  traffic-observer:
+    container_name: traffic-observer
+    build:
+      context: .
+      dockerfile: traffic-observer/Dockerfile
+    privileged: true
+    pid: host
+    network_mode: host
+    environment:
+      TRAFFIC_INTERFACES: ${TRAFFIC_INTERFACES:-}
+      TRAFFIC_FALLBACK_INTERFACES: ${TRAFFIC_FALLBACK_INTERFACES:-docker0}
+      TRAFFIC_ONLY_SEED_CONTAINERS: ${TRAFFIC_ONLY_SEED_CONTAINERS:-true}
+      TRAFFIC_DISCOVERY_CONCURRENCY: ${TRAFFIC_DISCOVERY_CONCURRENCY:-32}
+      TRAFFIC_FILTER: ${TRAFFIC_FILTER:-}
+      TRAFFIC_CONTROL_ADDR: ${TRAFFIC_CONTROL_ADDR:-:19092}
+      EMULATOR_SERVICE_TRAFFIC_URL: ${EMULATOR_SERVICE_TRAFFIC_URL:-}
+    volumes:
+      - /sys/kernel/debug:/sys/kernel/debug
+      - /sys/fs/bpf:/sys/fs/bpf
+      - /sys/kernel/btf:/sys/kernel/btf:ro
+      - /lib/modules:/lib/modules:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    # profiles:
+    #   - observer
+
 networks:
   internet-map:
     driver: bridge

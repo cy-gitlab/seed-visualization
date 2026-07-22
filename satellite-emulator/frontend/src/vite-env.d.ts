@@ -20,6 +20,10 @@ interface ImportMetaEnv {
   readonly VITE_CESIUM_BASE_URL?: string;
   readonly VITE_SATELLITE_TILES_URL?: string;
   readonly VITE_SATELLITE_TILES_PROXY_ADDRESS?: string;
+  readonly VITE_TRAFFIC_OBSERVER_URL_PREFIX?: string;
+  readonly VITE_TRAFFIC_OBSERVER_ADDRESS?: string;
+  readonly VITE_TRAFFIC_OBSERVER_WS_URL?: string;
+  readonly VITE_TRAFFIC_OBSERVER_FILTER_URL?: string;
 }
 
 interface ImportMeta {

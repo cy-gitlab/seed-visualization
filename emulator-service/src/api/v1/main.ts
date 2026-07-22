@@ -419,7 +419,7 @@ router.post('/packet', express.json(), async function (req, res, next) {
 });
 
 export function registerWebSocketRoutes() {
-    router.ws('/console/:id', async function (ws, req, next) {
+    router.ws('/console/:id', async function (ws, req) {
         try {
             if (process.env.CONSOLE === 'false') {
                 throw Error('CONSOLE is not enabled');
@@ -432,24 +432,18 @@ export function registerWebSocketRoutes() {
                 ws.close();
             }
         }
-
-        next();
     });
-    router.ws('/sniff', async function (ws, req, next) {
+    router.ws('/sniff', async function (ws) {
         snifferSubscribers.push(ws);
-        next();
     });
-    router.ws('/container/vis/set', async function (ws, req, next) {
+    router.ws('/container/vis/set', async function (ws) {
         visSubscribers.push(ws);
-        next();
     });
-    router.ws('/host', async function (ws, req, next) {
+    router.ws('/host', async function (ws) {
         hostSubscribers.push(ws);
-        next();
     });
-    router.ws('/packet', async function (ws, req, next) {
+    router.ws('/packet', async function (ws) {
         packetSubscribers.push(ws);
-        next();
     });
 }
 
