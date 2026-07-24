@@ -92,7 +92,7 @@ flowchart LR
 
 ```mermaid
 %%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
-flowchart TB
+flowchart LR
   Dashboard["StarlinkDashboard"]
   Globe["CesiumGlobe"]
   Scene["cesiumScene"]
