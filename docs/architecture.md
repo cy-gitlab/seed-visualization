@@ -5,7 +5,7 @@
 ## 1. 项目模块总览
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "22px", "fontFamily": "Arial, Microsoft YaHei, sans-serif"}, "flowchart": {"htmlLabels": true, "nodeSpacing": 120, "rankSpacing": 140, "diagramPadding": 36, "wrappingWidth": 180, "curve": "basis"}} }%%
+%%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
 flowchart TB
   Repo["seed-visualization"]
 
