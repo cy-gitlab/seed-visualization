@@ -91,7 +91,7 @@ flowchart LR
 ## 3. Satellite Emulator 前端调用关系
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "22px", "fontFamily": "Arial, Microsoft YaHei, sans-serif"}, "flowchart": {"htmlLabels": true, "nodeSpacing": 120, "rankSpacing": 140, "diagramPadding": 36, "wrappingWidth": 180, "curve": "basis"}} }%%
+%%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
 flowchart TB
   Dashboard["StarlinkDashboard"]
   Globe["CesiumGlobe"]
@@ -144,7 +144,7 @@ flowchart TB
 #### 3.1.1 纯组件关系拓扑
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "22px", "fontFamily": "Arial, Microsoft YaHei, sans-serif"}, "flowchart": {"htmlLabels": true, "nodeSpacing": 120, "rankSpacing": 140, "diagramPadding": 36, "wrappingWidth": 260, "curve": "basis"}} }%%
+%%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
 flowchart TB
   Route["Route / Page<br/>Starlink entry"]
   Dashboard["StarlinkDashboard.vue<br/>页面状态总控"]
@@ -190,7 +190,7 @@ flowchart TB
 #### 3.1.2 组件调用 service / API 拓扑
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "22px", "fontFamily": "Arial, Microsoft YaHei, sans-serif"}, "flowchart": {"htmlLabels": true, "nodeSpacing": 120, "rankSpacing": 140, "diagramPadding": 36, "wrappingWidth": 260, "curve": "basis"}} }%%
+%%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
 flowchart LR
   Dashboard["StarlinkDashboard.vue"]
   Globe["CesiumGlobe.vue"]
@@ -270,7 +270,7 @@ flowchart LR
 ## 4. Satellite Backend 调用与广播关系
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "22px", "fontFamily": "Arial, Microsoft YaHei, sans-serif"}, "flowchart": {"htmlLabels": true, "nodeSpacing": 120, "rankSpacing": 140, "diagramPadding": 36, "wrappingWidth": 180, "curve": "basis"}} }%%
+%%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
 flowchart LR
   Client["Satellite Frontend"]
   SatApi["Satellite API"]
@@ -295,7 +295,7 @@ flowchart LR
 ## 5. emulator-service 调用关系
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "22px", "fontFamily": "Arial, Microsoft YaHei, sans-serif"}, "flowchart": {"htmlLabels": true, "nodeSpacing": 120, "rankSpacing": 140, "diagramPadding": 36, "wrappingWidth": 180, "curve": "basis"}} }%%
+%%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
 flowchart TB
   Frontends["Frontends"]
   Api["emulator-service API"]
@@ -326,7 +326,7 @@ flowchart TB
 ## 6. traffic-observer 抓包链路
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "22px", "fontFamily": "Arial, Microsoft YaHei, sans-serif"}, "flowchart": {"htmlLabels": true, "nodeSpacing": 120, "rankSpacing": 140, "diagramPadding": 36, "wrappingWidth": 180, "curve": "basis"}} }%%
+%%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
 flowchart TB
   Frontend["Traffic Replay UI"]
   Control["Control Server"]
@@ -394,7 +394,7 @@ flowchart TB
 ## 7. Traffic Replay 前端数据流
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "22px", "fontFamily": "Arial, Microsoft YaHei, sans-serif"}, "sequence": {"actorFontSize": 22, "messageFontSize": 20, "noteFontSize": 20, "actorMargin": 100, "messageMargin": 60, "boxMargin": 16}} }%%
+%%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
 sequenceDiagram
   participant User as User
   participant UI as StarlinkDashboard Traffic Replay
@@ -426,7 +426,7 @@ sequenceDiagram
 ## 8. Internet Map 前端调用关系
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "22px", "fontFamily": "Arial, Microsoft YaHei, sans-serif"}, "flowchart": {"htmlLabels": true, "nodeSpacing": 120, "rankSpacing": 140, "diagramPadding": 36, "wrappingWidth": 180, "curve": "basis"}} }%%
+%%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
 flowchart TB
   MapApp["internet-map frontend"]
   BaseMap["BaseMap"]
