@@ -6,7 +6,7 @@
 
 ```mermaid
 %%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
-flowchart TB
+flowchart LR
   Repo["seed-visualization"]
 
   Repo --> Satellite["satellite-emulator"]
@@ -145,7 +145,7 @@ flowchart TB
 
 ```mermaid
 %%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
-flowchart TB
+flowchart LR
   Route["Route / Page<br/>Starlink entry"]
   Dashboard["StarlinkDashboard.vue<br/>页面状态总控"]
 
