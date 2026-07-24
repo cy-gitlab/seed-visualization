@@ -46,7 +46,7 @@ flowchart TB
 ## 2. Docker Compose 运行时架构
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "22px", "fontFamily": "Arial, Microsoft YaHei, sans-serif"}, "flowchart": {"htmlLabels": true, "nodeSpacing": 120, "rankSpacing": 140, "diagramPadding": 36, "wrappingWidth": 180, "curve": "basis"}} }%%
+%%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
 flowchart LR
   Browser["Browser"]
 
