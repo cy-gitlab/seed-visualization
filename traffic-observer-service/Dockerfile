@@ -1,7 +1,6 @@
 FROM golang:1.22-bookworm AS builder
-ENV GOPROXY=https://goproxy.cn,direct
-ENV http_proxy=http://10.1.9.253:7890
-ENV https_proxy=http://10.1.9.253:7890
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 
 WORKDIR /src/traffic-observer-service
 COPY traffic-observer-service/go.mod traffic-observer-service/go.sum ./

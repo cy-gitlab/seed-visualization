@@ -1,0 +1,128 @@
+name: CI Traffic Observer Service
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "traffic-observer-service/**"
+      - "shared/go/docker-api/**"
+      - "docker-compose.yml"
+      - ".github/workflows/ci-traffic-observer-service.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "traffic-observer-service/**"
+      - "shared/go/docker-api/**"
+      - "docker-compose.yml"
+      - ".github/workflows/ci-traffic-observer-service.yaml"
+  workflow_call:
+    inputs:
+      run-static-checks:
+        type: boolean
+        required: false
+        default: true
+      run-unit-tests:
+        type: boolean
+        required: false
+        default: true
+      run-docker-build:
+        type: boolean
+        required: false
+        default: true
+  workflow_dispatch:
+    inputs:
+      run-static-checks:
+        description: "Run static checks"
+        type: boolean
+        required: false
+        default: true
+      run-unit-tests:
+        description: "Run unit tests"
+        type: boolean
+        required: false
+        default: true
+      run-docker-build:
+        description: "Build Docker image"
+        type: boolean
+        required: false
+        default: true
+
+env:
+  GO_VERSION: "1.22"
+
+jobs:
+  traffic-observer-service:
+    name: Traffic Observer Service
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: |
+            traffic-observer-service/go.sum
+            shared/go/docker-api/go.mod
+
+      - name: Install eBPF compile dependencies
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-static-checks }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-libc-dev
+
+      - name: Check Go formatting
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-static-checks }}
+        run: |
+          files="$(gofmt -l traffic-observer-service shared/go/docker-api)"
+          if [ -n "$files" ]; then
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Vet traffic-observer-service
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-static-checks }}
+        working-directory: traffic-observer-service
+        run: go vet ./...
+
+      - name: Vet shared Go docker-api
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-static-checks }}
+        working-directory: shared/go/docker-api
+        run: go vet ./...
+
+      - name: Compile eBPF object
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-static-checks }}
+        run: |
+          clang \
+            -O2 \
+            -g \
+            -target bpf \
+            -D__TARGET_ARCH_x86 \
+            -Itraffic-observer-service/bpf \
+            -I/usr/include/x86_64-linux-gnu \
+            -c traffic-observer-service/bpf/packet_trace.bpf.c \
+            -o /tmp/packet_trace.bpf.o
+
+      - name: Run traffic-observer-service Go tests
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-unit-tests }}
+        working-directory: traffic-observer-service
+        run: go test ./...
+
+      - name: Run shared Go docker-api tests
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-unit-tests }}
+        working-directory: shared/go/docker-api
+        run: go test ./...
+
+      - name: Build traffic-observer-service binary
+        working-directory: traffic-observer-service
+        run: CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /tmp/traffic-collector ./cmd/collector
+
+      - name: Docker build
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-docker-build }}
+        run: docker compose build traffic-observer-service
+

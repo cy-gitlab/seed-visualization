@@ -24,11 +24,11 @@ type ContainerListItem struct {
 }
 
 type ContainerInspect struct {
-	ID              string           `json:"Id"`
-	Name            string           `json:"Name"`
-	Config          ContainerConfig  `json:"Config"`
-	State           ContainerState   `json:"State"`
-	HostConfig      HostConfig       `json:"HostConfig"`
+	ID              string          `json:"Id"`
+	Name            string          `json:"Name"`
+	Config          ContainerConfig `json:"Config"`
+	State           ContainerState  `json:"State"`
+	HostConfig      HostConfig      `json:"HostConfig"`
 	NetworkSettings NetworkSettings `json:"NetworkSettings"`
 }
 

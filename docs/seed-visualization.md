@@ -4,7 +4,7 @@ seed-visualization 目前由 5 个主要容器组成：
 
 - `internet-map`：Internet Map 前端。
 - `satellite-emulator`：Satellite 3D 可视化前端和 Nginx 入口。
-- `satellite-emulator-service`：卫星链路、基站链路、网络路径事件 API / WebSocket 服务。
+- `satellite-emulator-service`：卫星链路、基站链路 API / WebSocket 服务。
 - `traffic-observer-service`：eBPF + Go Collector，负责抓取宿主机容器虚拟网卡上的 packet metadata。
 - `emulator-service`：仿真器 API 总服务，负责容器、网络、终端、sniffer、插件等通用能力。
 
@@ -15,7 +15,7 @@ seed-visualization 目前由 5 个主要容器组成：
 | `internet-map` | `internet-map/` | Internet Map 前端，用于展示传统网络拓扑、IX / Transit / AS 节点，并提供容器操作入口。 | [internet-map.md](./internet-map.md) |
 | `internet-map-3D` | `internet-map/` | Internet Map 的 3D 展示方向，目前作为前端能力描述，不是独立容器。 | [internet-map-3D.md](./internet-map-3D.md) |
 | `satellite-emulator` | `satellite-emulator/` | Satellite 3D 前端与 Nginx 入口，负责卫星、地面基站、容器节点、链路与抓包回放展示。 | [satellite-emulator.md](./satellite-emulator.md) |
-| `satellite-emulator-service` | `satellite-emulator-service/` | Satellite API / WebSocket 服务，负责链路帧、网络路径、网络节点元数据。 | [satellite-emulator-service.md](./satellite-emulator-service.md) |
+| `satellite-emulator-service` | `satellite-emulator-service/` | Satellite API / WebSocket 服务，负责卫星链路、基站链路、轨道和 gateway 数据。 | [satellite-emulator-service.md](./satellite-emulator-service.md) |
 | `traffic-observer-service` | `traffic-observer-service/` | eBPF + Go Collector 服务，负责抓包 filter、ringbuf 读取和 packet metadata WS 推送。 | [traffic-observer-service.md](./traffic-observer-service.md) |
 | `emulator-service` | `emulator-service/` | 仿真器 API 总服务，负责 Docker 容器、网络、终端、sniffer、插件等通用能力。 | [emulator-service.md](./emulator-service.md) |
 | `shared` | `shared/` | 跨语言共享库目录，目前包含 Go 版 Docker API 封装，后续可扩展 TS / Python 等版本。 | - |
@@ -34,7 +34,7 @@ flowchart TB
   SATAPI["Satellite API service<br/>satellite-emulator-service"]
 
   EBPF["eBPF host 上抓取<br/>容器虚拟网卡数据<br/>静态容器 + 动态卫星容器"]
-  SHARED["共享文件数据<br/>tmp JSON / TLE / metadata"]
+  SHARED["共享文件数据<br/>satellite-emulator-service/tmp JSON / TLE / metadata"]
 
   IM3D ~~~ IM ~~~ SAT
   EMU ~~~ TRAFFIC ~~~ SATAPI
@@ -61,7 +61,7 @@ flowchart TB
 | --- | --- | --- |
 | `internet-map` | `internet-map/` | Internet Map 前端、传统网络拓扑展示、容器操作入口 |
 | `satellite-emulator` | `satellite-emulator/` | Satellite 3D 前端、Nginx 代理 `/api/v1`、`/emulator`、`/traffic-observer` |
-| `satellite-emulator-service` | `satellite-emulator-service/` | `POST /links`、`GET network-nodes`、`WS link-updates` |
+| `satellite-emulator-service` | `satellite-emulator-service/` | `POST /links`、`GET planned-shell-orbit`、`GET starlink-gateways`、`WS link-updates` |
 | `traffic-observer-service` | `traffic-observer-service/` | eBPF loader、ringbuf reader、filter control、packet WebSocket |
 | `emulator-service` | `emulator-service/` | 容器、网络、终端、sniffer、插件等仿真器 API |
 

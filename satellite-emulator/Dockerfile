@@ -5,7 +5,6 @@ WORKDIR /build/frontend
 COPY frontend/package.json frontend/pnpm-lock.yaml* ./
 RUN pnpm i
 COPY frontend ./
-COPY tmp /build/tmp
 RUN pnpm run build
 
 FROM node:22-slim
@@ -14,8 +13,6 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends nginx iproute2 \
     && rm -f /etc/nginx/sites-enabled/default \
     && rm -rf /var/lib/apt/lists/*
-
-COPY tmp /usr/src/app/tmp
 
 COPY --from=frontend-builder /build/frontend/dist/frontend /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

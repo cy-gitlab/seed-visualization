@@ -25,25 +25,37 @@
           </em>
         </h2>
         <SatelliteList
-          embedded
-          hide-header
-          :active-tab="activeDockListTab"
+          v-if="activeDockPage === 'all'"
           :satellites="satellites"
           :selected-satellites="selectedSatellites"
           :orbit-plane-options="orbitPlaneOptions"
-          :ground-stations="groundStations"
-          :selected-station-ids="selectedStationIds"
-          :connected-station-ids="connectedStationIds"
           :settings="settings"
-          :current-time="currentTime"
-          :selected-id="selectedId"
-          :speed-disabled="speedDisabled"
           @select="starlinkActions.selectSatellite"
+          @update-settings="starlinkActions.updateSettings"
+        />
+
+        <SelectedSatelliteList
+          v-else-if="activeDockPage === 'selected'"
+          :selected-satellites="selectedSatellites"
           @focus-selected="starlinkActions.focusSelectedSatellite"
           @remove="starlinkActions.removeSatellite"
           @remove-all="starlinkActions.removeAllSatellites"
+        />
+
+        <GroundStationList
+          v-else-if="activeDockPage === 'stations'"
+          :ground-stations="groundStations"
+          :selected-station-ids="selectedStationIds"
+          :connected-station-ids="connectedStationIds"
           @station-focus="starlinkActions.stationFocus"
           @station-selection-change="starlinkActions.stationSelectionChange"
+        />
+
+        <StarlinkSettingsPanel
+          v-else-if="activeDockPage === 'settings'"
+          :settings="settings"
+          :current-time="currentTime"
+          :speed-disabled="speedDisabled"
           @update-settings="starlinkActions.updateSettings"
           @set-system-time="starlinkActions.setSystemTime"
           @reset-system-time="starlinkActions.resetSystemTime"
@@ -113,7 +125,10 @@
 </template>
 
 <script setup lang="ts">
+import GroundStationList from '@/features/starlink/components/GroundStationList.vue';
 import SatelliteList from '@/features/starlink/components/SatelliteList.vue';
+import SelectedSatelliteList from '@/features/starlink/components/SelectedSatelliteList.vue';
+import StarlinkSettingsPanel from '@/features/starlink/components/StarlinkSettingsPanel.vue';
 import StarlinkShellLegend, {
   type StarlinkShellLegendItem,
 } from '@/features/starlink/components/StarlinkShellLegend.vue';
@@ -166,7 +181,6 @@ const props = defineProps<{
   connectedStationIds: string[];
   settings: SimulationSettings;
   currentTime: Date;
-  selectedId?: string;
   speedDisabled: boolean;
   filterInput: string;
   nodeSearchInput: string;
@@ -212,7 +226,6 @@ const {
   dockPages,
   activeDockPageLabel,
   activeDockPageCount,
-  activeDockListTab,
   toggleDockCollapsed,
   toggleDockPageMenu,
   selectDockPage,
