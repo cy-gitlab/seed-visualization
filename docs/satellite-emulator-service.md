@@ -31,3 +31,7 @@ flowchart LR
   Tmp -->|"默认轨道 / 基站 / 链路数据"| API
   API -->|"WS link-updates"| Frontend
 ```
+
+## 测试覆盖
+
+Mermaid 测试覆盖图见 [satellite-emulator-service-testing.md](./test/satellite-emulator-service-testing.md)。

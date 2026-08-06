@@ -10,7 +10,7 @@ COPY traffic-observer-service/internal ./internal
 RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/traffic-collector ./cmd/collector
 
-FROM ubuntu:22.04
+FROM debian:bookworm-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

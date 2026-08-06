@@ -41,3 +41,7 @@ flowchart TB
 - 默认 control / WS 地址：`:19092`
 - 运行模式：`privileged: true`、`pid: host`、`network_mode: host`
 - 因为使用 host network，Go 后端监听 `:19092` 时会直接暴露为宿主机 `19092`，不需要也不应该再配置 compose `ports` 映射。
+
+## 测试覆盖
+
+Mermaid 测试覆盖图见 [traffic-observer-service-testing.md](./test/traffic-observer-service-testing.md)。

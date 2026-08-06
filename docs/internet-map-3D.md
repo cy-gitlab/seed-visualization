@@ -1,13 +1,13 @@
-﻿# internet-map-3D
+﻿# internet-map-3d
 
-`internet-map-3D` 表示 Internet Map 的 3D 展示方向。当前项目中没有单独的 `internet-map-3D` 容器，文档中将其作为前端能力模块描述。
+`internet-map-3d` 是独立的 Internet Map 3D 前端项目，对应 Docker Compose 服务 `internet-map-3d`。
 
 ## 和其它服务的关系
 
 ```mermaid
 %%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
 flowchart TB
-  IM3D["Internet Map 3D 前端能力"]
+  IM3D["Internet Map 3D 前端"]
   Emulator["emulator-service"]
   Traffic["traffic-observer-service"]
   Packets["packet metadata"]
@@ -20,4 +20,9 @@ flowchart TB
 ## 说明
 
 - 容器操作和节点信息仍由 `emulator-service` 提供。
+- Docker Compose 默认通过 `http://localhost:8090` 暴露该前端。
 - 如果展示实时 packet 流动，则订阅 `traffic-observer-service` 的 packet WebSocket。
+
+## 测试覆盖
+
+Mermaid 测试覆盖图见 [internet-map-3d-testing.md](./test/internet-map-3d-testing.md)。

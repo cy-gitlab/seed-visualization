@@ -27,6 +27,19 @@ services:
       - internet-map
     restart: unless-stopped
 
+  internet-map-3d:
+    container_name: internet-map-3d
+    build:
+      context: internet-map-3d
+      dockerfile: Dockerfile
+    depends_on:
+      - emulator-service
+    ports:
+      - "8090:80"
+    networks:
+      - internet-map
+    restart: unless-stopped
+
   satellite-emulator:
     container_name: satellite-emulator
     build:

@@ -1,20 +1,20 @@
 name: CI Satellite Emulator Service
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "satellite-emulator-service/**"
-      - "docker-compose.yml"
-      - ".github/workflows/ci-satellite-emulator-service.yaml"
-  push:
-    branches:
-      - main
-    paths:
-      - "satellite-emulator-service/**"
-      - "docker-compose.yml"
-      - ".github/workflows/ci-satellite-emulator-service.yaml"
+  # pull_request:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "satellite-emulator-service/**"
+  #     - "docker-compose.yml"
+  #     - ".github/workflows/ci-satellite-emulator-service.yaml"
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "satellite-emulator-service/**"
+  #     - "docker-compose.yml"
+  #     - ".github/workflows/ci-satellite-emulator-service.yaml"
   workflow_call:
     inputs:
       run-static-checks:
@@ -86,10 +86,20 @@ jobs:
 
       - name: Unit tests
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-unit-tests }}
+        env:
+          TEST_COVERAGE_SCOPE: |
+            - satellite position helpers: finite ECI/LLA-derived coordinates and positive orbital speed calculation.
+            - orbit polyline helpers: generated orbit sample metadata and speed metadata propagation.
+            - ground-link helpers: satellite position validation, gateway validation, nearest gateway selection, range filtering, and selected-satellite limiting.
         run: npm run test:unit
 
       - name: Integration tests
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-integration-tests }}
+        env:
+          TEST_COVERAGE_SCOPE: |
+            - static satellite API: planned shell orbit data and Starlink gateway data responses.
+            - link ingestion API: default satellite link file posting, explicit tmp file posting, path traversal rejection, malformed body rejection, and missing/legacy network link rejection.
+            - persistence and broadcast path: accepted link payloads are stored and emitted through the satellite API integration path.
         run: npm run test:integration
 
       - name: Build
@@ -99,4 +109,3 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-docker-build }}
         working-directory: .
         run: docker compose build satellite-emulator-service
-

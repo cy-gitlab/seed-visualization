@@ -8,40 +8,40 @@ export const defaultRouters: RouteRecord[] = [
     {
         path: '/',
         component: () => import('@/view/layout/index.vue'),
-        redirect: {name: "home"},
+        redirect: {name: "ixMap3D"},
         name: 'layout',
-        children: [
-            {
-                path: '/home',
-                component: () => import('@/view/home/index.vue'),
-                name: 'home',
-                meta: {
-                    title: "Home",
-                    icon: 'HomeFilled',
-                    componentName: 'Home',
-                },
-            },
-            {
-                path: '/dashboard',
-                component: () => import('@/view/dashboard/index.vue'),
-                name: 'dashboard',
-                meta: {
-                    title: "Dashboard",
-                    icon: 'HomeFilled',
-                    componentName: 'Dashboard',
-                },
-            },
-            {
-                path: '/plugin',
-                component: () => import('@/view/plugin/index.vue'),
-                name: 'plugin',
-                meta: {
-                    title: "Plugin",
-                    icon: 'HomeFilled',
-                    componentName: 'Plugin',
-                },
-            },
-        ]
+        // children: [
+            // {
+            //     path: '/home',
+            //     component: () => import('@/view/home/index.vue'),
+            //     name: 'home',
+            //     meta: {
+            //         title: "Home",
+            //         icon: 'HomeFilled',
+            //         componentName: 'Home',
+            //     },
+            // },
+            // {
+            //     path: '/dashboard',
+            //     component: () => import('@/view/dashboard/index.vue'),
+            //     name: 'dashboard',
+            //     meta: {
+            //         title: "Dashboard",
+            //         icon: 'HomeFilled',
+            //         componentName: 'Dashboard',
+            //     },
+            // },
+            // {
+            //     path: '/plugin',
+            //     component: () => import('@/view/plugin/index.vue'),
+            //     name: 'plugin',
+            //     meta: {
+            //         title: "Plugin",
+            //         icon: 'HomeFilled',
+            //         componentName: 'Plugin',
+            //     },
+            // },
+        // ]
     },
     {
         path: '/mapIndex',

@@ -1,22 +1,22 @@
 name: CI Traffic Observer Service
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "traffic-observer-service/**"
-      - "shared/go/docker-api/**"
-      - "docker-compose.yml"
-      - ".github/workflows/ci-traffic-observer-service.yaml"
-  push:
-    branches:
-      - main
-    paths:
-      - "traffic-observer-service/**"
-      - "shared/go/docker-api/**"
-      - "docker-compose.yml"
-      - ".github/workflows/ci-traffic-observer-service.yaml"
+  # pull_request:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "traffic-observer-service/**"
+  #     - "shared/go/docker-api/**"
+  #     - "docker-compose.yml"
+  #     - ".github/workflows/ci-traffic-observer-service.yaml"
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "traffic-observer-service/**"
+  #     - "shared/go/docker-api/**"
+  #     - "docker-compose.yml"
+  #     - ".github/workflows/ci-traffic-observer-service.yaml"
   workflow_call:
     inputs:
       run-static-checks:
@@ -50,7 +50,7 @@ on:
         default: true
 
 env:
-  GO_VERSION: "1.22"
+  GO_VERSION: "1.26.5"
 
 jobs:
   traffic-observer-service:
@@ -111,11 +111,24 @@ jobs:
       - name: Run traffic-observer-service Go tests
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-unit-tests }}
         working-directory: traffic-observer-service
+        env:
+          TEST_COVERAGE_SCOPE: |
+            - internal/config: default environment loading, override parsing, CSV interface parsing, boolean parsing, and invalid concurrency fallback.
+            - internal/event: raw eBPF packet event conversion to API payload fields, timestamps, MAC/IP/protocol formatting, and container metadata enrichment.
+            - internal/filter: empty disabled filter behavior, protocol matching, direction matching, host/port matching, and invalid filter rejection.
+            - internal/realtime: packet WebSocket hub registration, broadcast payload shaping, packet sequence values, and client cleanup.
+            - internal/sink: stdout sink JSON serialization, invalid WebSocket URL rejection, WebSocket sink connection, and JSON send behavior.
+            - internal/dockeriface and probe-adjacent logic: container interface discovery helpers and probe configuration behavior covered through package tests where available.
         run: go test ./...
 
       - name: Run shared Go docker-api tests
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-unit-tests }}
         working-directory: shared/go/docker-api
+        env:
+          TEST_COVERAGE_SCOPE: |
+            - client construction: Docker socket endpoint defaults and custom endpoint configuration.
+            - container APIs: list request construction, inspect request construction, JSON decoding, and error response handling.
+            - shared models: reusable container, network, label, and metadata structures consumed by Go services.
         run: go test ./...
 
       - name: Build traffic-observer-service binary
@@ -125,4 +138,3 @@ jobs:
       - name: Docker build
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-docker-build }}
         run: docker compose build traffic-observer-service
-

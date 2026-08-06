@@ -3,9 +3,7 @@ import { createServer } from 'vite';
 
 const baseUrl = 'http://127.0.0.1:5173/dev/starlink';
 const isCi = Boolean(process.env.CI);
-const testCommand = isCi
-  ? 'pnpm exec playwright test --workers=1 --timeout=120000'
-  : 'pnpm exec playwright test';
+const testCommand = 'pnpm exec playwright test';
 
 function spawnShell(command) {
   return spawn(command, {

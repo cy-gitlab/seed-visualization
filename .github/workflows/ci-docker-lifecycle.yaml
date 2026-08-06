@@ -1,28 +1,30 @@
 name: CI Docker Lifecycle Probes
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "emulator-service/**"
-      - "internet-map/**"
-      - "satellite-emulator/**"
-      - "satellite-emulator-service/**"
-      - "docker-compose.yml"
-      - "ci/**"
-      - ".github/workflows/ci-docker-lifecycle.yaml"
-  push:
-    branches:
-      - main
-    paths:
-      - "emulator-service/**"
-      - "internet-map/**"
-      - "satellite-emulator/**"
-      - "satellite-emulator-service/**"
-      - "docker-compose.yml"
-      - "ci/**"
-      - ".github/workflows/ci-docker-lifecycle.yaml"
+  # pull_request:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "emulator-service/**"
+  #     - "internet-map/**"
+  #     - "internet-map-3d/**"
+  #     - "satellite-emulator/**"
+  #     - "satellite-emulator-service/**"
+  #     - "docker-compose.yml"
+  #     - "ci/**"
+  #     - ".github/workflows/ci-docker-lifecycle.yaml"
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "emulator-service/**"
+  #     - "internet-map/**"
+  #     - "internet-map-3d/**"
+  #     - "satellite-emulator/**"
+  #     - "satellite-emulator-service/**"
+  #     - "docker-compose.yml"
+  #     - "ci/**"
+  #     - ".github/workflows/ci-docker-lifecycle.yaml"
   workflow_call: {}
   workflow_dispatch: {}
 
@@ -37,7 +39,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Build lifecycle images
-        run: docker compose build emulator-service satellite-emulator-service internet-map satellite-emulator
+        run: docker compose build emulator-service satellite-emulator-service internet-map internet-map-3d satellite-emulator
 
       - name: Run compose lifecycle probes
         run: bash ci/probe-docker-compose.sh
@@ -48,4 +50,3 @@ jobs:
         with:
           name: docker-lifecycle-artifacts
           path: ci-artifacts/docker-lifecycle
-
