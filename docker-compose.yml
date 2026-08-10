@@ -1,6 +1,7 @@
 services:
-  emulator-service:
-    container_name: emulator-service
+  seedemu_emulator_service:
+    container_name: seedemu_emulator_service
+    image: handsonsecurity/seedemu-emulator-service:3.0
     build:
       context: emulator-service
       dockerfile: Dockerfile
@@ -11,65 +12,70 @@ services:
     ports:
       - "7071:7071"
     networks:
-      - internet-map
+      - seed-visualization
     restart: unless-stopped
 
-  internet-map:
-    container_name: internet-map
+  seedemu_internet_map:
+    container_name: seedemu_internet_map
+    image: handsonsecurity/seedemu-internet-map:3.0
     build:
       context: internet-map
       dockerfile: Dockerfile
     depends_on:
-      - emulator-service
+      - seedemu_emulator_service
     ports:
       - "8080:80"
     networks:
-      - internet-map
+      - seed-visualization
     restart: unless-stopped
 
-  internet-map-3d:
-    container_name: internet-map-3d
+  seedemu_internet_map_3d:
+    container_name: seedemu_internet_map_3d
+    image: handsonsecurity/seedemu-internet-map-3d:3.0
     build:
       context: internet-map-3d
       dockerfile: Dockerfile
     depends_on:
-      - emulator-service
+      - seedemu_emulator_service
     ports:
       - "8090:80"
     networks:
-      - internet-map
+      - seed-visualization
     restart: unless-stopped
 
-  satellite-emulator:
-    container_name: satellite-emulator
+  seedemu_satellite_emulator:
+    container_name: seedemu_satellite_emulator
+    image: handsonsecurity/seedemu-satellite-emulator:3.0
     build:
       context: satellite-emulator
       dockerfile: Dockerfile
     depends_on:
-      - emulator-service
-      - satellite-emulator-service
-      # - traffic-observer-service
+      - seedemu_emulator_service
+      - seedemu_satellite_emulator_service
+      - seedmu_traffic_observer_service
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
       - "9090:80"
     networks:
-      - internet-map
+      - seed-visualization
     restart: unless-stopped
 
-  satellite-emulator-service:
-    container_name: satellite-emulator-service
+  seedemu_satellite_emulator_service:
+    container_name: seedemu_satellite_emulator_service
+    image: handsonsecurity/seedemu-satellite-emulator-service:3.0
     build:
       context: satellite-emulator-service
       dockerfile: Dockerfile
     ports:
       - "9091:9091"
     networks:
-      - internet-map
+      - seed-visualization
     restart: unless-stopped
 
-  traffic-observer-service:
-    container_name: traffic-observer-service
+  seedmu_traffic_observer_service:
+    container_name: seedmu_traffic_observer_service
+    image: handsonsecurity/seedemu-traffic-observer-service:3.0
     build:
       context: .
       dockerfile: traffic-observer-service/Dockerfile
@@ -95,5 +101,5 @@ services:
     #   - observer
 
 networks:
-  internet-map:
+  seed-visualization:
     driver: bridge

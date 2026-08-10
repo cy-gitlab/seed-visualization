@@ -1,5 +1,5 @@
 FROM golang:1.22-bookworm AS builder
-ARG GOPROXY=https://proxy.golang.org,direct
+ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=${GOPROXY}
 
 WORKDIR /src/traffic-observer-service
