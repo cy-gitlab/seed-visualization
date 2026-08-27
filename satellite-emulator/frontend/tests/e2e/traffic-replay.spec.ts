@@ -90,6 +90,7 @@ test.describe('traffic replay capture and playback', () => {
     await page.getByPlaceholder('tcpdump-like filter, e.g. icmp').fill('icmp');
     await e2eClick(page.getByRole('button', { name: /Apply/i }));
     await sendTrafficPacket(page, 3, {
+      containerName: 'generated-container',
       containerId: 'generated-container-1234567890',
       nodeName: 'Generated Node',
       nodeIp: '10.200.0.9',

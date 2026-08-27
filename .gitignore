@@ -34,3 +34,5 @@ test-results/
 playwright-report/
 bin
 __pycache__
+*.pcap
+traffic-observer-service/pcap/

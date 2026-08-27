@@ -13,6 +13,7 @@ import type {
 type UseTrafficObserverConnectionOptions = {
   cleanupInactiveTrafficContainers: () => void;
   captureActive?: Ref<boolean>;
+  filterBlocked?: Ref<boolean>;
   isPanelDisabled: Ref<boolean>;
   playbackEnabled: Ref<boolean>;
   recordTrafficPacket: (message: TrafficPacketMessage) => void;
@@ -101,7 +102,7 @@ export function useTrafficObserverConnection(options: UseTrafficObserverConnecti
   }
 
   async function submitTrafficFilter() {
-    if (options.isPanelDisabled.value || trafficFilterSubmitting.value) {
+    if (options.isPanelDisabled.value || options.filterBlocked?.value || trafficFilterSubmitting.value) {
       return;
     }
 

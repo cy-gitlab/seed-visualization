@@ -63,7 +63,12 @@ export function useTrafficContainerNodes(options: UseTrafficContainerNodesOption
         return {
           id: container.Id,
           type: normalizeContainerNodeType(emulatorInfo.role),
-          name: detail?.nodeName || emulatorInfo.displayname || getTrafficLocationCity(location) || emulatorInfo.name,
+          name:
+            detail?.nodeLabel ||
+            detail?.nodeName ||
+            getContainerNodeLabel(container) ||
+            getTrafficLocationCity(location) ||
+            emulatorInfo.name,
           longitude: location.longitude,
           latitude: location.latitude,
         };
@@ -87,7 +92,7 @@ export function useTrafficContainerNodes(options: UseTrafficContainerNodesOption
       nodes.push({
         id: detail.containerId,
         type: normalizeContainerNodeType(detail.nodeType),
-        name: detail.nodeName || detail.shortContainerId,
+        name: detail.nodeLabel || detail.nodeName || detail.shortContainerId,
         longitude: detail.longitude ?? fallbackLocation!.longitude,
         latitude: detail.latitude ?? fallbackLocation!.latitude,
       });
@@ -146,6 +151,7 @@ export function useTrafficContainerNodes(options: UseTrafficContainerNodesOption
     return trafficSearchableContainerNodes.value.filter((node) =>
       [
         node.nodeName,
+        node.nodeLabel,
         node.nodeIp,
         node.containerName,
         node.containerId,
@@ -158,7 +164,8 @@ export function useTrafficContainerNodes(options: UseTrafficContainerNodesOption
   const visibleTrafficNodeSearchResults = computed(() => trafficNodeSearchResults.value.slice(0, 8));
 
   function rememberTrafficPacketNodes(message: TrafficPacketMessage) {
-    rememberTrafficContainerDetail(message.containerId, {
+    rememberTrafficContainerDetail(getMessageContainerIdentifier(message), {
+      nodeLabel: message.nodeLabel,
       nodeName: message.nodeName,
       nodeIp: message.nodeIp,
     });
@@ -166,12 +173,16 @@ export function useTrafficContainerNodes(options: UseTrafficContainerNodesOption
 
   function triggerTrafficPacket(message: TrafficPacketMessage) {
     rememberTrafficPacketNodes(message);
-    markTrafficContainerActive(message.containerId);
+    markTrafficContainerActive(getMessageContainerIdentifier(message));
+  }
+
+  function getMessageContainerIdentifier(message: TrafficPacketMessage) {
+    return message.containerName || message.containerId || '';
   }
 
   function rememberTrafficContainerDetail(
     containerId: string,
-    detail: { nodeName?: string; nodeIp?: string },
+    detail: { nodeLabel?: string; nodeName?: string; nodeIp?: string },
   ) {
     if (!containerId) {
       return;
@@ -196,10 +207,11 @@ export function useTrafficContainerNodes(options: UseTrafficContainerNodesOption
       [normalizedContainerId]: {
         containerId: normalizedContainerId,
         shortContainerId: normalizedContainerId.slice(0, 12),
+        nodeLabel: detail.nodeLabel || previous?.nodeLabel || getContainerNodeLabel(container),
         nodeName,
         nodeIp: detail.nodeIp || previous?.nodeIp,
         nodeType: previous?.nodeType || emulatorInfo?.role,
-        containerName: previous?.containerName || getContainerName(container),
+        containerName: previous?.containerName || getContainerName(container) || containerId,
         longitude: location?.longitude ?? previous?.longitude,
         latitude: location?.latitude ?? previous?.latitude,
         locationSource: getTrafficLocationSource(location) ?? previous?.locationSource,
@@ -248,6 +260,7 @@ export function useTrafficContainerNodes(options: UseTrafficContainerNodesOption
       containerId: container.Id,
       shortContainerId: container.Id.slice(0, 12),
       nodeName: emulatorInfo.displayname || emulatorInfo.name,
+      nodeLabel: getContainerNodeLabel(container),
       nodeType: emulatorInfo.role,
       containerName: getContainerName(container),
       longitude: location?.longitude,
@@ -311,6 +324,7 @@ export function useTrafficContainerNodes(options: UseTrafficContainerNodesOption
       [normalizedContainerId]: {
         containerId: normalizedContainerId,
         shortContainerId: normalizedContainerId.slice(0, 12),
+        nodeLabel: previous?.nodeLabel || getContainerNodeLabel(container),
         nodeName:
           previous?.nodeName ||
           emulatorInfo?.displayname ||
@@ -327,15 +341,32 @@ export function useTrafficContainerNodes(options: UseTrafficContainerNodesOption
   }
 
   function findEmulatorContainer(containerId: string) {
+    const normalized = normalizeContainerIdentifier(containerId);
     return emulatorContainers.value.find((container) =>
       container.Id === containerId ||
       container.Id.startsWith(containerId) ||
-      containerId.startsWith(container.Id),
+      containerId.startsWith(container.Id) ||
+      normalizeContainerIdentifier(getContainerName(container)) === normalized ||
+      (container.Names ?? []).some((name) => normalizeContainerIdentifier(name) === normalized),
     );
   }
 
   function getContainerName(container: EmulatorContainerInfo | undefined) {
     return container?.Names?.[0]?.replace(/^\//, '');
+  }
+
+  function getContainerNodeLabel(container: EmulatorContainerInfo | undefined) {
+    const emulatorInfo = container?.meta?.emulatorInfo;
+    if (!emulatorInfo) {
+      return undefined;
+    }
+    if (emulatorInfo.displayname) {
+      return emulatorInfo.displayname;
+    }
+    if (emulatorInfo.asn !== undefined && emulatorInfo.name) {
+      return `${emulatorInfo.asn}/${emulatorInfo.name}`;
+    }
+    return emulatorInfo.name;
   }
 
   async function selectTrafficNodeSearchResult(containerId: string) {
@@ -362,10 +393,11 @@ export function useTrafficContainerNodes(options: UseTrafficContainerNodesOption
     }
 
     ensureTrafficContainerVisible(containerId);
+    const normalizedContainerId = findEmulatorContainer(containerId)?.Id ?? containerId;
     const activeUntil = Date.now() + TRAFFIC_NODE_FLASH_MS;
     trafficContainerActiveUntil.value = {
       ...trafficContainerActiveUntil.value,
-      [containerId]: activeUntil,
+      [normalizedContainerId]: activeUntil,
     };
   }
 
@@ -441,6 +473,10 @@ export function useTrafficContainerNodes(options: UseTrafficContainerNodesOption
       [container.Id]: fallbackLocation,
     };
     rememberTrafficContainerLocation(container.Id, fallbackLocation, 'generated');
+  }
+
+  function normalizeContainerIdentifier(value: string | undefined) {
+    return value?.replace(/^\//, '').trim().toLowerCase() ?? '';
   }
 
   function clearActiveTrafficContainers() {

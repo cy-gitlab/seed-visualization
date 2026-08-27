@@ -90,12 +90,16 @@ services:
       TRAFFIC_FILTER: ${TRAFFIC_FILTER:-}
       TRAFFIC_CONTROL_ADDR: ${TRAFFIC_CONTROL_ADDR:-:19092}
       EMULATOR_SERVICE_TRAFFIC_URL: ${EMULATOR_SERVICE_TRAFFIC_URL:-}
+      TRAFFIC_PCAP_ENABLED: ${TRAFFIC_PCAP_ENABLED:-false}
+      TRAFFIC_PCAP_OUTPUT_DIR: ${TRAFFIC_PCAP_OUTPUT_DIR:-/data/pcap}
+      TRAFFIC_LOG_TIMEZONE: ${TRAFFIC_LOG_TIMEZONE:-Asia/Shanghai}
     volumes:
       - /sys/kernel/debug:/sys/kernel/debug
       - /sys/fs/bpf:/sys/fs/bpf
       - /sys/kernel/btf:/sys/kernel/btf:ro
       - /lib/modules:/lib/modules:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traffic-observer-service/pcap:/data/pcap
     restart: unless-stopped
     # profiles:
     #   - observer

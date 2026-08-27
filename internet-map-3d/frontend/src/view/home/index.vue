@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import ixMapImg from '@/assets/img/ixMap.png'
-import uploadMapImg from '@/assets/img/uploadMap.png'
+import mapImg from '@/assets/img/map.png'
+import worldMapImg from '@/assets/img/worldMap.png'
 import dashboardImg from '@/assets/img/dashboard.png'
 import pluginImg from '@/assets/img/plugin.png'
 
@@ -28,38 +28,38 @@ import pluginImg from '@/assets/img/plugin.png'
       >
         <li>
           <router-link
-              :to="{ name: 'ixMap3D'}"
+              :to="{ name: 'liveEmulatorTopology3D'}"
           >
             <el-tooltip
                 class="box-item"
                 effect="dark"
-                content="Similar to the map page in function, the difference lies in the display dimension. IXMap only shows up to the IX dimension and does not display the Host at a deeper level."
+                content="Live 3D emulator topology loaded from Docker API data, with live packet capture and replay controls."
                 placement="bottom-start"
             >
               <el-card>
                 <template #header>
-                  <h3>IX MAP</h3>
+                  <h3>LIVE EMULATOR TOPOLOGY</h3>
                 </template>
-                <el-image :src="ixMapImg" :fit="'fit'"/>
+                <el-image :src="worldMapImg" :fit="'fit'"/>
               </el-card>
             </el-tooltip>
           </router-link>
         </li>
         <li>
           <router-link
-              :to="{ name: 'uploadMap'}"
+              :to="{ name: 'emulatorTopology3D'}"
           >
             <el-tooltip
                 class="box-item"
                 effect="dark"
-                content="Compared with Internet Map, the data source is the docker-compose.yml file of the uploaded SEED simulator. Of course, this data source merely displays the network structure and other functions such as terminals are not available."
+                content="File-based 3D emulator topology loaded from an uploaded Docker Compose file, with saved packet replay support."
                 placement="bottom-start"
             >
               <el-card>
                 <template #header>
-                  <h3>Upload MAP</h3>
+                  <h3>EMULATOR TOPOLOGY</h3>
                 </template>
-                <el-image :src="uploadMapImg" :fit="'fit'"/>
+                <el-image :src="mapImg" :fit="'fit'"/>
               </el-card>
             </el-tooltip>
           </router-link>

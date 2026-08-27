@@ -8,65 +8,33 @@ export const defaultRouters: RouteRecord[] = [
     {
         path: '/',
         component: () => import('@/view/layout/index.vue'),
-        redirect: {name: "ixMap3D"},
+        redirect: {name: "liveEmulatorTopology3D"},
         name: 'layout',
-        // children: [
-            // {
-            //     path: '/home',
-            //     component: () => import('@/view/home/index.vue'),
-            //     name: 'home',
-            //     meta: {
-            //         title: "Home",
-            //         icon: 'HomeFilled',
-            //         componentName: 'Home',
-            //     },
-            // },
-            // {
-            //     path: '/dashboard',
-            //     component: () => import('@/view/dashboard/index.vue'),
-            //     name: 'dashboard',
-            //     meta: {
-            //         title: "Dashboard",
-            //         icon: 'HomeFilled',
-            //         componentName: 'Dashboard',
-            //     },
-            // },
-            // {
-            //     path: '/plugin',
-            //     component: () => import('@/view/plugin/index.vue'),
-            //     name: 'plugin',
-            //     meta: {
-            //         title: "Plugin",
-            //         icon: 'HomeFilled',
-            //         componentName: 'Plugin',
-            //     },
-            // },
-        // ]
     },
     {
         path: '/mapIndex',
         component: () => import('@/view/map/index.vue'),
-        redirect: {name: "ixMap3D"},
+        redirect: {name: "map"},
         name: 'mapIndex',
         children: [
             {
                 path: '/uploadMap',
-                component: () => import('@/view/map/uploadMap/uploadMap.vue'),
-                name: 'uploadMap',
+                component: () => import('@/view/map/emulatorTopology3D/emulatorTopology3D.vue'),
+                name: 'emulatorTopology3D',
                 meta: {
-                    title: "UploadMap",
+                    title: "EmulatorTopology3D",
                     icon: 'HomeFilled',
-                    componentName: 'UploadMap',
+                    componentName: 'EmulatorTopology3D',
                 },
             },
             {
-                path: '/ixMap3D',
-                component: () => import('@/view/map/ixMap3D/ixMap3D.vue'),
-                name: 'ixMap3D',
+                path: '/map',
+                component: () => import('@/view/map/liveEmulatorTopology3D/liveEmulatorTopology3D.vue'),
+                name: 'liveEmulatorTopology3D',
                 meta: {
-                    title: "IXMap3D",
+                    title: "LiveEmulatorTopology3D",
                     icon: 'HomeFilled',
-                    componentName: 'IXMap3D',
+                    componentName: 'LiveEmulatorTopology3D',
                 },
             },
         ]

@@ -15,7 +15,6 @@ func clearEnv(t *testing.T) {
 		"TRAFFIC_ONLY_SEED_CONTAINERS",
 		"TRAFFIC_DISCOVERY_CONCURRENCY",
 		"TRAFFIC_INTERFACES",
-		"TRAFFIC_FALLBACK_INTERFACES",
 		"EMULATOR_SERVICE_TRAFFIC_URL",
 	} {
 		t.Setenv(key, "")
@@ -48,9 +47,6 @@ func TestLoadDefaults(t *testing.T) {
 	if len(cfg.Interfaces) != 0 {
 		t.Fatalf("expected no explicit interfaces by default, got %#v", cfg.Interfaces)
 	}
-	if !reflect.DeepEqual(cfg.FallbackInterfaces, []string{"docker0"}) {
-		t.Fatalf("unexpected fallback interfaces: %#v", cfg.FallbackInterfaces)
-	}
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -62,7 +58,6 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("TRAFFIC_ONLY_SEED_CONTAINERS", "false")
 	t.Setenv("TRAFFIC_DISCOVERY_CONCURRENCY", "4")
 	t.Setenv("TRAFFIC_INTERFACES", " veth0, veth1,, ")
-	t.Setenv("TRAFFIC_FALLBACK_INTERFACES", " docker0, br-seed ")
 	t.Setenv("EMULATOR_SERVICE_TRAFFIC_URL", " ws://frontend/ws ")
 
 	cfg := Load()
@@ -84,9 +79,6 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg.Interfaces, []string{"veth0", "veth1"}) {
 		t.Fatalf("unexpected explicit interfaces: %#v", cfg.Interfaces)
-	}
-	if !reflect.DeepEqual(cfg.FallbackInterfaces, []string{"docker0", "br-seed"}) {
-		t.Fatalf("unexpected fallback interfaces: %#v", cfg.FallbackInterfaces)
 	}
 	if cfg.WebSocketSinkURL != "ws://frontend/ws" {
 		t.Fatalf("unexpected websocket sink URL: %q", cfg.WebSocketSinkURL)

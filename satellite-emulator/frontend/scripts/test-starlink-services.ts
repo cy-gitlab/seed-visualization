@@ -10,6 +10,9 @@ import {
   normalizeTrafficReplaySeekInput,
 } from '../src/features/starlink/services/traffic/trafficReplayService';
 import {
+  importTrafficReplayFile,
+} from '../src/features/starlink/services/traffic/trafficReplayImportService';
+import {
   getContainerGeoLocation,
   getNearestLocationDistanceKm,
   pickFallbackTrafficNodeLocation,
@@ -52,6 +55,7 @@ function packet(
     timestampNs,
     timestampMs: Date.parse(timestamp),
     receivedAtMs: Date.parse(timestamp) + 1,
+    containerName: id,
     containerId: id,
   };
 }
@@ -61,11 +65,13 @@ function testCreateReplayEvent() {
     type: 'packet',
     timestamp: '2026-07-15T09:31:28.922Z',
     timestampNs: '1784107888922000000',
+    containerName: 'container-a',
     containerId: 'container-a',
   };
 
   const event = createTrafficReplayEvent(message);
 
+  assert.equal(event.containerName, message.containerName);
   assert.equal(event.containerId, message.containerId);
   assert.equal(event.timestampMs, Date.parse(message.timestamp));
   assert.equal(event.timestampNs, message.timestampNs);
@@ -106,6 +112,68 @@ function testTrafficReplayPlaylist() {
   assert.equal(playlist.clampIndex(99), 2);
   assert.equal(playlist.clampPosition(2.4), 2);
   assert.equal(playlist.clampPosition(99), 3);
+}
+
+async function testTrafficReplayImportJSONRemapsContainerIds() {
+  const containers: EmulatorContainerInfo[] = [
+    {
+      Id: 'new-container-router-a',
+      Names: ['/as150-router-a'],
+      meta: {
+        emulatorInfo: {
+          name: 'router-a',
+          displayname: 'Router A',
+          nets: [{ name: 'net0', address: '10.150.0.254/24' }],
+        },
+      },
+    },
+  ];
+  const file = new File([
+    JSON.stringify([
+      {
+        type: 'packet',
+        timestamp: '2026-08-11T10:20:30.000Z',
+        timestampNs: '1000',
+        containerId: 'old-container-router-a',
+        nodeName: 'router-a',
+        nodeIp: '10.150.0.254',
+        sourceIp: '10.150.0.71',
+        destIp: '10.150.0.254',
+        ipProtocol: 'icmp',
+      },
+    ]),
+  ], 'packets.json', { type: 'application/json' });
+
+  const result = await importTrafficReplayFile(file, containers);
+
+  assert.equal(result.fileType, 'json');
+  assert.equal(result.events.length, 1);
+  assert.equal(result.events[0].containerId, 'new-container-router-a');
+  assert.equal(result.events[0].nodeName, 'Router A');
+  assert.equal(result.remappedCount, 1);
+}
+
+async function testTrafficReplayImportPcapMapsByIP() {
+  const containers: EmulatorContainerInfo[] = [
+    {
+      Id: 'new-container-host-b',
+      meta: {
+        emulatorInfo: {
+          name: 'host-b',
+          nets: [{ name: 'net0', address: '10.151.0.72/24' }],
+        },
+      },
+    },
+  ];
+  const file = new File([createMinimalICMPPcap()], 'icmp.pcap');
+  const result = await importTrafficReplayFile(file, containers);
+
+  assert.equal(result.fileType, 'pcap');
+  assert.equal(result.events.length, 1);
+  assert.equal(result.events[0].containerId, 'new-container-host-b');
+  assert.equal(result.events[0].sourceIp, '10.150.0.72');
+  assert.equal(result.events[0].destIp, '10.151.0.72');
+  assert.equal(result.events[0].ipProtocol, 'icmp');
 }
 
 function testSeekHelpers() {
@@ -337,6 +405,8 @@ testCreateReplayEvent();
 testTimestampNormalization();
 testReplayEventComparison();
 testTrafficReplayPlaylist();
+await testTrafficReplayImportJSONRemapsContainerIds();
+await testTrafficReplayImportPcapMapsByIP();
 testSeekHelpers();
 testSatelliteShellStyle();
 testTrafficContainerLocations();
@@ -346,3 +416,56 @@ testGroundLinks();
 testPlannedOrbitParsing();
 
 console.log('starlink service unit tests passed');
+
+function createMinimalICMPPcap() {
+  const buffer = new ArrayBuffer(24 + 16 + 14 + 20 + 8);
+  const view = new DataView(buffer);
+  let offset = 0;
+  view.setUint32(offset, 0xa1b2c3d4, true);
+  offset += 4;
+  view.setUint16(offset, 2, true);
+  offset += 2;
+  view.setUint16(offset, 4, true);
+  offset += 2;
+  view.setUint32(offset, 0, true);
+  offset += 4;
+  view.setUint32(offset, 0, true);
+  offset += 4;
+  view.setUint32(offset, 65535, true);
+  offset += 4;
+  view.setUint32(offset, 1, true);
+  offset += 4;
+
+  const packetLength = 14 + 20 + 8;
+  view.setUint32(offset, 1, true);
+  offset += 4;
+  view.setUint32(offset, 2000, true);
+  offset += 4;
+  view.setUint32(offset, packetLength, true);
+  offset += 4;
+  view.setUint32(offset, packetLength, true);
+  offset += 4;
+
+  offset += 12;
+  view.setUint16(offset, 0x0800, false);
+  offset += 2;
+
+  view.setUint8(offset, 0x45);
+  view.setUint8(offset + 1, 0);
+  view.setUint16(offset + 2, 28, false);
+  view.setUint16(offset + 4, 0, false);
+  view.setUint16(offset + 6, 0, false);
+  view.setUint8(offset + 8, 64);
+  view.setUint8(offset + 9, 1);
+  view.setUint16(offset + 10, 0, false);
+  writeIPv4(view, offset + 12, '10.150.0.72');
+  writeIPv4(view, offset + 16, '10.151.0.72');
+
+  return buffer;
+}
+
+function writeIPv4(view: DataView, offset: number, ip: string) {
+  ip.split('.').map(Number).forEach((part, index) => {
+    view.setUint8(offset + index, part);
+  });
+}

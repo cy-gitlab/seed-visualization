@@ -21,8 +21,8 @@
           <el-menu-item index="/plugin">Plugin</el-menu-item>
           <el-sub-menu index="/map">
             <template #title>Map</template>
-            <el-menu-item index="/ixMap3D">IXMap3D</el-menu-item>
-            <el-menu-item index="/uploadMap">UploadMap</el-menu-item>
+            <el-menu-item index="/liveEmulatorTopology3D">LiveEmulatorTopology3D</el-menu-item>
+            <el-menu-item index="/emulatorTopology3D">EmulatorTopology3D</el-menu-item>
           </el-sub-menu>
         </div>
       </el-menu>

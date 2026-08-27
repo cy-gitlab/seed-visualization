@@ -35,7 +35,10 @@
     <StarlinkRightDock
       v-model:filter-input="trafficFilterInput"
       v-model:node-search-input="trafficNodeSearchInput"
+      v-model:playback-timing-mode="trafficPlaybackTimingMode"
       v-model:playback-interval-ms="trafficPlaybackIntervalMs"
+      v-model:timeline-window-ms="trafficPlaybackTimelineWindowMs"
+      v-model:timeline-speed="trafficPlaybackTimelineSpeed"
       :shell-legend-items="shellLegendItems"
       :total-satellite-count="totalSatelliteCount"
       :hidden-shell-ids="hiddenShellIds"
@@ -56,6 +59,12 @@
       :traffic-panel-disabled="trafficReplayPanelDisabled"
       :filter-error="trafficFilterError"
       :filter-status-text="trafficFilterStatusText"
+      :filter-disabled-by-import="trafficImportedFileActive && !trafficReplayOfflineFilterAvailable"
+      :import-submitting="trafficReplayImportSubmitting"
+      :import-error="trafficReplayImportError"
+      :import-status-text="trafficReplayImportStatusText"
+      :import-disabled-by-filter="trafficCaptureActive"
+      :import-file-active="trafficImportedFileActive"
       :recording-enabled="trafficRecordingEnabled"
       :playback-enabled="trafficPlaybackEnabled"
       :playback-paused="trafficPlaybackPaused"
@@ -140,6 +149,10 @@ import {
   getSatelliteShellId,
   SATELLITE_SHELL_STYLES,
 } from '@/features/starlink/services/satelliteShellStyle';
+import {
+  type TrafficReplayPcapPacket,
+} from '@/features/starlink/services/traffic/trafficReplayImportService';
+import { TrafficReplayWorkerClient } from '@/features/starlink/services/traffic/trafficReplayWorkerClient';
 import type {
   GroundStation,
   InterSatelliteLink,
@@ -147,6 +160,7 @@ import type {
   SatelliteGroundLink,
   SatellitePoint,
   SimulationSettings,
+  TrafficPacketReplayEvent,
 } from '@/features/starlink/types';
 
 const records = ref<PlannedOrbitRecord[]>([]);
@@ -198,6 +212,12 @@ const backendSatelliteLinks = ref<InterSatelliteLink[]>([]);
 const trafficPlaybackEnabled = ref(false);
 const trafficCaptureActive = ref(false);
 const trafficNodeSearchInput = ref('');
+const trafficReplayImportSubmitting = ref(false);
+const trafficReplayImportError = ref('');
+const trafficReplayImportStatusText = ref('Click to select collector JSON, optionally with matching PCAP');
+const trafficReplayJsonEvents = ref<TrafficPacketReplayEvent[]>([]);
+const trafficReplayPcapPackets = ref<TrafficReplayPcapPacket[]>([]);
+const trafficReplayWorker = new TrafficReplayWorkerClient();
 const lastGroundTimelineSignature = ref('');
 const lastSatelliteTimelineSignature = ref('');
 const backendLinkedSatelliteIds = ref<string[]>([]);
@@ -250,6 +270,7 @@ onUnmounted(() => {
   disposeTemporaryFocus();
   clearTrafficPlaybackTimer();
   clearTrafficPlaybackClock();
+  trafficReplayWorker.terminate();
 });
 
 const renderTime = computed(() => now.value);
@@ -328,11 +349,17 @@ const trafficReplayBlockedBySimulationSpeed = computed(() =>
   !trafficCaptureActive.value && settings.speed !== 1,
 );
 const trafficReplayPanelDisabled = computed(() => trafficReplayBlockedBySimulationSpeed.value);
+const trafficReplayOfflineFilterAvailable = computed(() =>
+  trafficImportedFileActive.value &&
+  trafficReplayJsonEvents.value.length > 0 &&
+  trafficReplayPcapPackets.value.length > 0,
+);
 const {
   activeTrafficNodeIds,
   cleanupInactiveTrafficContainers,
   clearActiveTrafficContainers,
   containerNodes,
+  emulatorContainers,
   focusedTrafficContainerNodeId,
   getTrafficContainerDetail,
   refreshEmulatorContainers,
@@ -352,6 +379,7 @@ const {
   clearTrafficPlaybackTimer,
   clearTrafficRecording,
   formatTrafficReplaySeekTooltip,
+  importTrafficReplayEvents,
   jumpTrafficPlayback,
   recordTrafficPacket,
   setRecordingEnabled: setTrafficRecordingEnabled,
@@ -360,8 +388,12 @@ const {
   toggleTrafficPlayback,
   toggleTrafficRecording,
   trafficPacketEvents,
+  trafficImportedFileActive,
   trafficPlaybackIntervalMs,
   trafficPlaybackPaused,
+  trafficPlaybackTimingMode,
+  trafficPlaybackTimelineSpeed,
+  trafficPlaybackTimelineWindowMs,
   trafficRecordingEnabled,
   trafficReplayRangeLabel,
   trafficReplaySeekMax,
@@ -390,6 +422,7 @@ const {
 } = useTrafficObserverConnection({
   captureActive: trafficCaptureActive,
   cleanupInactiveTrafficContainers,
+  filterBlocked: trafficImportedFileActive,
   isPanelDisabled: trafficReplayPanelDisabled,
   playbackEnabled: trafficPlaybackEnabled,
   recordTrafficPacket,
@@ -586,16 +619,115 @@ const starlinkDockActions = {
   resetSystemTime,
 };
 const trafficReplayDockActions = {
-  submitFilter: submitTrafficFilter,
+  submitFilter: submitTrafficFilterFromReplayPanel,
+  importReplayFile: importTrafficReplayFileFromDisk,
   selectNodeSearchResult: selectTrafficNodeSearchResult,
   toggleRecording: toggleTrafficRecording,
   togglePlayback: toggleTrafficPlayback,
   stopPlayback: stopTrafficPlayback,
   jumpPlayback: jumpTrafficPlayback,
-  clearRecording: clearTrafficRecording,
+  clearRecording: clearTrafficReplayPackets,
   updateSeekPosition: updateTrafficReplaySeekPosition,
   seekPosition: seekTrafficPlaybackPosition,
 };
+
+function submitTrafficFilterFromReplayPanel() {
+  if (trafficReplayOfflineFilterAvailable.value) {
+    void applyTrafficReplayOfflineFilter();
+    return;
+  }
+
+  void submitTrafficFilter();
+}
+
+async function applyTrafficReplayOfflineFilter() {
+  trafficReplayImportError.value = '';
+  trafficFilterError.value = '';
+  trafficFilterSubmitting.value = true;
+  try {
+    const filter = trafficFilterInput.value.trim();
+    const result = filter
+      ? await trafficReplayWorker.filterPackets(
+          trafficReplayJsonEvents.value,
+          trafficReplayPcapPackets.value,
+          filter,
+          (message) => {
+            trafficReplayImportStatusText.value = message;
+          },
+        )
+      : {
+          events: trafficReplayJsonEvents.value,
+          matchedPacketCount: trafficReplayJsonEvents.value.length,
+          skippedPacketCount: 0,
+        };
+
+    importTrafficReplayEvents(result.events);
+    result.events.forEach((event) => rememberTrafficPacketNodes(event));
+    trafficReplayImportStatusText.value = filter
+      ? `Offline filter matched ${result.events.length.toLocaleString()} packets.`
+      : `Offline filter cleared. ${result.events.length.toLocaleString()} packets selected.`;
+  } catch (error) {
+    trafficFilterError.value = error instanceof Error ? error.message : String(error);
+    trafficReplayImportStatusText.value = 'Offline filter failed.';
+  } finally {
+    trafficFilterSubmitting.value = false;
+  }
+}
+
+async function importTrafficReplayFileFromDisk(files: File[]) {
+  if (trafficCaptureActive.value || trafficRecordingEnabled.value || trafficPlaybackEnabled.value) {
+    return;
+  }
+
+  const jsonFile = files.find((file) => file.name.toLowerCase().endsWith('.json'));
+  const pcapFile = files.find((file) => file.name.toLowerCase().endsWith('.pcap'));
+  if (!jsonFile) {
+    trafficReplayImportError.value = 'Import a collector JSON file. PCAP can only be used together with JSON.';
+    trafficReplayImportStatusText.value = 'Import failed.';
+    return;
+  }
+
+  trafficReplayImportSubmitting.value = true;
+  trafficReplayImportError.value = '';
+  try {
+    await refreshEmulatorContainers();
+    const result = await trafficReplayWorker.importFiles(
+      jsonFile,
+      pcapFile,
+      emulatorContainers.value,
+      (message) => {
+        trafficReplayImportStatusText.value = message;
+      },
+    );
+    if (!result.events.length) {
+      trafficReplayImportError.value = 'No playable packets were found in this file.';
+      trafficReplayImportStatusText.value = 'Import failed.';
+      return;
+    }
+
+    trafficReplayJsonEvents.value = result.jsonEvents;
+    trafficReplayPcapPackets.value = result.pcapPackets;
+    importTrafficReplayEvents(result.events);
+    result.events.forEach((event) => rememberTrafficPacketNodes(event));
+    trafficReplayImportStatusText.value =
+      pcapFile
+        ? `Imported ${result.events.length.toLocaleString()} JSON packets and ${result.pcapPackets.length.toLocaleString()} PCAP packets. Offline filter is available.`
+        : `Imported ${result.events.length.toLocaleString()} JSON packets, remapped ${result.jsonRemappedCount.toLocaleString()}, skipped ${result.jsonSkippedCount.toLocaleString()}.`;
+  } catch (error) {
+    trafficReplayImportError.value = error instanceof Error ? error.message : String(error);
+    trafficReplayImportStatusText.value = 'Import failed.';
+  } finally {
+    trafficReplayImportSubmitting.value = false;
+  }
+}
+
+function clearTrafficReplayPackets() {
+  clearTrafficRecording();
+  trafficReplayJsonEvents.value = [];
+  trafficReplayPcapPackets.value = [];
+  trafficReplayImportError.value = '';
+  trafficReplayImportStatusText.value = 'Click to select collector JSON, optionally with matching PCAP';
+}
 
 </script>
 

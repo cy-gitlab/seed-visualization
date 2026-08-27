@@ -116,9 +116,7 @@ const parseFile = async () => {
   }
 
   loading.value = true
-
   try {
-    ElMessage.info('Parsing file...')
     const fileData = await parseFileContent(currentFile.value)
     if (fileData.content) {
       emit('update:mapData', fileData.content)

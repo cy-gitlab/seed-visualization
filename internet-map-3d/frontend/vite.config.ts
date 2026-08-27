@@ -23,6 +23,10 @@ function normalizeBase(base: string | undefined) {
     return `/${trimTrailingSlash(base).replace(/^\/+/, '')}`
 }
 
+function escapeRegExp(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function createCesiumBuildBasePlugin(env: Record<string, string>): PluginOption {
     const base = normalizeBase(env.VITE_BUILD_ASSET_PREFIX)
     let isBuild = false
@@ -45,6 +49,33 @@ function createCesiumBuildBasePlugin(env: Record<string, string>): PluginOption 
 
 export default defineConfig(({mode}) => {
     const env = loadEnv(mode, envDir)
+    const trafficObserverPrefix = env.VITE_TRAFFIC_OBSERVER_URL_PREFIX
+    const trafficObserverTarget = env.VITE_TRAFFIC_OBSERVER_ADDRESS
+    const proxy: Record<string, any> = {
+        [env.VITE_SERVER_URL_PREFIX]: {
+            target: env.VITE_PROXY_ADDRESS,
+            changeOrigin: true,
+        },
+        [env.VITE_SERVER_EMULATOR_URL_PREFIX]: {
+            target: env.VITE_PROXY_EMULATOR_ADDRESS,
+            changeOrigin: true,
+            rewrite: (path: string) => path.replace(new RegExp(env.VITE_SERVER_EMULATOR_URL_PREFIX), '/api/v1'),
+        },
+        [env.VITE_SATELLITE_TILES_URL_PREFIX]: {
+            target: env.VITE_SATELLITE_TILES_PROXY_ADDRESS,
+            changeOrigin: true,
+        },
+    }
+
+    if (trafficObserverPrefix && trafficObserverTarget) {
+        proxy[trafficObserverPrefix] = {
+            target: trafficObserverTarget,
+            changeOrigin: true,
+            ws: true,
+            rewrite: (path: string) => path.replace(new RegExp(`^${escapeRegExp(trafficObserverPrefix)}`), ''),
+        }
+    }
+
     return {
         preflight: false,
         lintOnSave: false,
@@ -84,22 +115,7 @@ export default defineConfig(({mode}) => {
             port: readNumberEnv(env.VITE_FRONTEND_PORT, 5173),
             open: env.VITE_FRONTEND_OPEN === 'true',
             host: env.VITE_FRONTEND_HOST,
-            proxy: {
-                [env.VITE_SERVER_URL_PREFIX]: {
-                    target: env.VITE_PROXY_ADDRESS,
-                    changeOrigin: true,
-                    // rewrite: (path) => path.replace(new RegExp(env.VITE_APP_BASE_URL), ''),
-                },
-                [env.VITE_SERVER_EMULATOR_URL_PREFIX]: {
-                    target: env.VITE_PROXY_EMULATOR_ADDRESS,
-                    changeOrigin: true,
-                    rewrite: (path) => path.replace(new RegExp(env.VITE_SERVER_EMULATOR_URL_PREFIX), '/api/v1'),
-                },
-                [env.VITE_SATELLITE_TILES_URL_PREFIX]: {
-                    target: env.VITE_SATELLITE_TILES_PROXY_ADDRESS,
-                    changeOrigin: true,
-                },
-            },
+            proxy,
         },
         build: {
             outDir: env.VITE_BUILD_OUTPUT_PATH || 'dist',

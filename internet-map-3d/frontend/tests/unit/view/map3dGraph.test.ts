@@ -1,4 +1,4 @@
-import { augmentAsHighlight, edgeKey, isTransitRouter } from '@/view/map/shared/map3dGraph';
+import { augmentAsHighlight, edgeKey, isTransitRouter } from '@/view/map/shared/services/map3dGraph';
 import type { Edge, Vertex } from '@/utils/map-datasource';
 
 describe('3D map graph helpers', () => {

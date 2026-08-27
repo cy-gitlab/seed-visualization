@@ -34,6 +34,8 @@ type UseTrafficPlaybackControllerOptions = {
   playbackEnabled?: Ref<boolean>;
 };
 
+export type TrafficPlaybackTimingMode = 'interval' | 'timeline';
+
 export function useTrafficPlaybackController(options: UseTrafficPlaybackControllerOptions) {
   const trafficRecordingEnabled = ref(false);
   const trafficPlaybackEnabled = options.playbackEnabled ?? ref(false);
@@ -41,10 +43,16 @@ export function useTrafficPlaybackController(options: UseTrafficPlaybackControll
   const trafficReplaySeekPosition = ref(0);
   const trafficPlaybackEvents = ref<TrafficPacketReplayEvent[]>([]);
   const trafficPacketEvents = ref<TrafficPacketReplayEvent[]>([]);
+  const trafficImportedFileActive = ref(false);
   const trafficPlaybackPaused = ref(true);
+  const trafficPlaybackTimingMode = ref<TrafficPlaybackTimingMode>('interval');
   const trafficPlaybackIntervalMs = ref(2000);
+  const trafficPlaybackTimelineWindowMs = ref(0);
+  const trafficPlaybackTimelineSpeed = ref(1);
   let trafficPlaybackTimerId: number | undefined;
+  const trafficPlaybackScheduledTimerIds = new Set<number>();
   let trafficPlaybackClockFrameId: number | undefined;
+  let trafficPlaybackGeneration = 0;
 
   const trafficReplaySeekMax = computed(() =>
     Math.max(0, trafficPlaybackEvents.value.length || trafficPacketEvents.value.length),
@@ -66,6 +74,19 @@ export function useTrafficPlaybackController(options: UseTrafficPlaybackControll
   function recordTrafficPacket(message: TrafficPacketMessage) {
     const replayEvent = createTrafficReplayEvent(message);
     trafficPacketEvents.value = [...trafficPacketEvents.value, replayEvent].slice(-TRAFFIC_REPLAY_MAX_EVENTS);
+  }
+
+  function importTrafficReplayEvents(events: TrafficPacketReplayEvent[]) {
+    stopTrafficPlayback();
+    trafficRecordingEnabled.value = false;
+    trafficPacketEvents.value = [...events]
+      .sort(compareTrafficReplayEvents)
+      .slice(-TRAFFIC_REPLAY_MAX_EVENTS);
+    trafficImportedFileActive.value = true;
+    trafficPlaybackEvents.value = [];
+    trafficPlaybackIndex.value = 0;
+    trafficReplaySeekPosition.value = 0;
+    options.clearActiveTrafficContainers();
   }
 
   function setRecordingEnabled(enabled: boolean) {
@@ -104,7 +125,7 @@ export function useTrafficPlaybackController(options: UseTrafficPlaybackControll
       return;
     }
 
-    const delayMs = getTrafficPlaybackDelayMs();
+    const delayMs = getNextTrafficPlaybackDelayMs(trafficPlaybackIndex.value);
     startTrafficPlaybackClockToNextEvent(delayMs);
     scheduleNextTrafficPlaybackEvent(delayMs);
   }
@@ -123,11 +144,13 @@ export function useTrafficPlaybackController(options: UseTrafficPlaybackControll
     trafficReplaySeekPosition.value = 0;
     trafficPlaybackPaused.value = false;
     options.settings.customTimeEnabled = true;
+    trafficPlaybackGeneration += 1;
     playCurrentTrafficPlaybackEvent();
   }
 
   function stopTrafficPlayback() {
     const realTimeMs = Date.now();
+    trafficPlaybackGeneration += 1;
     trafficPlaybackEnabled.value = false;
     trafficPlaybackPaused.value = true;
     trafficPlaybackIndex.value = 0;
@@ -146,8 +169,10 @@ export function useTrafficPlaybackController(options: UseTrafficPlaybackControll
       return;
     }
 
+    trafficPlaybackGeneration += 1;
     trafficPacketEvents.value = [];
     trafficPlaybackEvents.value = [];
+    trafficImportedFileActive.value = false;
     trafficPlaybackIndex.value = 0;
     trafficReplaySeekPosition.value = 0;
     options.clearActiveTrafficContainers();
@@ -161,6 +186,7 @@ export function useTrafficPlaybackController(options: UseTrafficPlaybackControll
     const events = ensureTrafficPlaybackEvents();
     trafficPlaybackPaused.value = true;
     options.settings.customTimeEnabled = true;
+    trafficPlaybackGeneration += 1;
     clearTrafficPlaybackTimer();
     clearTrafficPlaybackClock();
 
@@ -194,6 +220,7 @@ export function useTrafficPlaybackController(options: UseTrafficPlaybackControll
     trafficPlaybackEnabled.value = true;
     trafficPlaybackPaused.value = true;
     options.settings.customTimeEnabled = true;
+    trafficPlaybackGeneration += 1;
     clearTrafficPlaybackTimer();
     clearTrafficPlaybackClock();
 
@@ -260,6 +287,11 @@ export function useTrafficPlaybackController(options: UseTrafficPlaybackControll
       return;
     }
 
+    if (trafficPlaybackTimingMode.value === 'timeline' && trafficPlaybackTimelineWindowMs.value > 0) {
+      playCurrentTrafficPlaybackWindow();
+      return;
+    }
+
     const currentIndex = trafficPlaybackIndex.value;
     const currentEvent = trafficPlaybackEvents.value[trafficPlaybackIndex.value];
     if (!currentEvent) {
@@ -273,9 +305,57 @@ export function useTrafficPlaybackController(options: UseTrafficPlaybackControll
 
     trafficPlaybackIndex.value += 1;
     trafficReplaySeekPosition.value = trafficPlaybackIndex.value;
-    const delayMs = getTrafficPlaybackDelayMs();
+    const delayMs = getNextTrafficPlaybackDelayMs(trafficPlaybackIndex.value);
     startTrafficPlaybackClockBetweenEvents(currentIndex, delayMs);
     scheduleNextTrafficPlaybackEvent(delayMs);
+  }
+
+  function playCurrentTrafficPlaybackWindow() {
+    const events = trafficPlaybackEvents.value;
+    const startEvent = events[trafficPlaybackIndex.value];
+    if (!startEvent) {
+      trafficPlaybackPaused.value = true;
+      return;
+    }
+
+    const windowMs = Math.max(0, Number(trafficPlaybackTimelineWindowMs.value) || 0);
+    const speed = getTrafficPlaybackTimelineSpeed();
+    const startTimestampMs = startEvent.timestampMs;
+    const endTimestampMs = startTimestampMs + windowMs;
+    const generation = trafficPlaybackGeneration;
+    let nextIndex = trafficPlaybackIndex.value;
+
+    while (nextIndex < events.length && events[nextIndex]!.timestampMs <= endTimestampMs) {
+      const event = events[nextIndex]!;
+      const eventIndex = nextIndex;
+      const delayMs = Math.max(0, Math.round((event.timestampMs - startTimestampMs) / speed));
+      const timerId = window.setTimeout(() => {
+        trafficPlaybackScheduledTimerIds.delete(timerId);
+        if (generation !== trafficPlaybackGeneration || !trafficPlaybackEnabled.value || trafficPlaybackPaused.value) {
+          return;
+        }
+        triggerTrafficPlaybackEvent(events[eventIndex]!);
+      }, delayMs);
+      trafficPlaybackScheduledTimerIds.add(timerId);
+      nextIndex += 1;
+    }
+
+    trafficPlaybackIndex.value = nextIndex;
+    trafficReplaySeekPosition.value = nextIndex;
+    startTrafficPlaybackClockTween(startTimestampMs, endTimestampMs, Math.max(1, Math.round(windowMs / speed)));
+
+    if (nextIndex >= events.length) {
+      trafficPlaybackTimerId = window.setTimeout(() => {
+        trafficPlaybackPaused.value = true;
+      }, Math.max(1, Math.round(windowMs / speed)));
+      return;
+    }
+
+    const nextEvent = events[nextIndex]!;
+    scheduleNextTrafficPlaybackEvent(Math.max(
+      TRAFFIC_REPLAY_MIN_STEP_MS,
+      Math.round((nextEvent.timestampMs - startTimestampMs) / speed),
+    ));
   }
 
   function scheduleNextTrafficPlaybackEvent(delayMs: number) {
@@ -299,11 +379,43 @@ export function useTrafficPlaybackController(options: UseTrafficPlaybackControll
     );
   }
 
+  function getNextTrafficPlaybackDelayMs(nextIndex: number) {
+    if (trafficPlaybackTimingMode.value !== 'timeline') {
+      return getTrafficPlaybackDelayMs();
+    }
+
+    const currentEvent = trafficPlaybackEvents.value[nextIndex - 1];
+    const nextEvent = trafficPlaybackEvents.value[nextIndex];
+    if (!currentEvent || !nextEvent) {
+      return TRAFFIC_REPLAY_MIN_STEP_MS;
+    }
+
+    return Math.min(
+      TRAFFIC_REPLAY_MAX_STEP_MS,
+      Math.max(
+        TRAFFIC_REPLAY_MIN_STEP_MS,
+        Math.round((nextEvent.timestampMs - currentEvent.timestampMs) / getTrafficPlaybackTimelineSpeed()),
+      ),
+    );
+  }
+
+  function getTrafficPlaybackTimelineSpeed() {
+    return Math.min(10000, Math.max(0.0001, Number(trafficPlaybackTimelineSpeed.value) || 1));
+  }
+
   function clearTrafficPlaybackTimer() {
     if (trafficPlaybackTimerId !== undefined) {
       window.clearTimeout(trafficPlaybackTimerId);
       trafficPlaybackTimerId = undefined;
     }
+    trafficPlaybackScheduledTimerIds.forEach((timerId) => window.clearTimeout(timerId));
+    trafficPlaybackScheduledTimerIds.clear();
+  }
+
+  function triggerTrafficPlaybackEvent(event: TrafficPacketReplayEvent) {
+    options.setTime(event.timestampMs);
+    options.syncTimelineToTime(event.timestampMs);
+    options.triggerTrafficPacket(event);
   }
 
   function startTrafficPlaybackClockBetweenEvents(currentIndex: number, durationMs: number) {
@@ -365,6 +477,7 @@ export function useTrafficPlaybackController(options: UseTrafficPlaybackControll
     clearTrafficPlaybackTimer,
     clearTrafficRecording,
     formatTrafficReplaySeekTooltip,
+    importTrafficReplayEvents,
     jumpTrafficPlayback,
     recordTrafficPacket,
     setRecordingEnabled,
@@ -373,10 +486,14 @@ export function useTrafficPlaybackController(options: UseTrafficPlaybackControll
     toggleTrafficPlayback,
     toggleTrafficRecording,
     trafficPacketEvents,
+    trafficImportedFileActive,
     trafficPlaybackEnabled,
     trafficPlaybackEvents,
     trafficPlaybackIntervalMs,
     trafficPlaybackPaused,
+    trafficPlaybackTimingMode,
+    trafficPlaybackTimelineSpeed,
+    trafficPlaybackTimelineWindowMs,
     trafficRecordingEnabled,
     trafficReplayRangeLabel,
     trafficReplaySeekMax,

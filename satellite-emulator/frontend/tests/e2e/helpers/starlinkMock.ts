@@ -241,6 +241,9 @@ export async function sendTrafficPacket(page: Page, index: number, overrides = {
         sequence: packetIndex,
         timestamp: `2026-07-15T06:34:${String(38 + packetIndex).padStart(2, '0')}.000000000Z`,
         timestampNs: String(1_784_096_078_000_000_000n + BigInt(packetIndex)),
+        containerName: packetIndex % 2
+          ? 'as150brd-router0-10.150.0.254'
+          : 'as150h-host_0-10.150.0.71',
         containerId: packetIndex % 2
           ? 'container-router-1234567890'
           : 'container-alpha-1234567890',

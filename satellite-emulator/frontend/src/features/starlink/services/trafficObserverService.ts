@@ -97,8 +97,8 @@ function isTrafficPacketMessage(value: unknown): value is TrafficPacketMessage {
         typeof message.timestampNs === 'number' ||
         typeof message.timestampNs === 'string'
       ) &&
-      typeof message.containerId === 'string' &&
-      message.containerId &&
+      typeof message.containerName === 'string' &&
+      message.containerName &&
       (
         message.direction === undefined ||
         message.direction === 'ingress' ||
@@ -111,9 +111,11 @@ function isTrafficPacketMessage(value: unknown): value is TrafficPacketMessage {
       (message.ipProtocol === undefined || typeof message.ipProtocol === 'string') &&
       (message.sourcePort === undefined || typeof message.sourcePort === 'number') &&
       (message.destPort === undefined || typeof message.destPort === 'number') &&
+      (message.sourceContainerName === undefined || typeof message.sourceContainerName === 'string') &&
       (message.sourceContainerId === undefined || typeof message.sourceContainerId === 'string') &&
       (message.sourceNodeName === undefined || typeof message.sourceNodeName === 'string') &&
       (message.sourceNodeIp === undefined || typeof message.sourceNodeIp === 'string') &&
+      (message.destContainerName === undefined || typeof message.destContainerName === 'string') &&
       (message.destContainerId === undefined || typeof message.destContainerId === 'string') &&
       (message.destNodeName === undefined || typeof message.destNodeName === 'string') &&
       (message.destNodeIp === undefined || typeof message.destNodeIp === 'string'),

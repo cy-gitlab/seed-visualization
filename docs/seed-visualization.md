@@ -6,7 +6,7 @@ seed-visualization 目前由 6 个主要容器组成：
 - `internet-map-3d`：Internet Map 3D 前端。
 - `satellite-emulator`：Satellite 3D 可视化前端和 Nginx 入口。
 - `satellite-emulator-service`：卫星链路、基站链路 API / WebSocket 服务。
-- `traffic-observer-service`：eBPF + Go Collector，负责抓取宿主机容器虚拟网卡上的 packet metadata。
+- `traffic-observer-service`：eBPF + Go Collector，负责抓取宿主机容器虚拟网卡上的 packet metadata，提供实时 WS 事件，并可按需保存 pcap / JSON 抓包文件。
 - `emulator-service`：仿真器 API 总服务，负责容器、网络、终端、sniffer、插件等通用能力。
 
 ## 子项目目录
@@ -17,7 +17,7 @@ seed-visualization 目前由 6 个主要容器组成：
 | `internet-map-3d` | `internet-map-3d/` | Internet Map 3D 前端，用于展示 IX 3D 地球和上传拓扑后的 3D 地球视图。 | [internet-map-3d.md](./internet-map-3d.md) | [internet-map-3d-testing.md](./test/internet-map-3d-testing.md) |
 | `satellite-emulator` | `satellite-emulator/` | Satellite 3D 前端与 Nginx 入口，负责卫星、地面基站、容器节点、链路与抓包回放展示。 | [satellite-emulator.md](./satellite-emulator.md) | [satellite-emulator-testing.md](./test/satellite-emulator-testing.md) |
 | `satellite-emulator-service` | `satellite-emulator-service/` | Satellite API / WebSocket 服务，负责卫星链路、基站链路、轨道和 gateway 数据。 | [satellite-emulator-service.md](./satellite-emulator-service.md) | [satellite-emulator-service-testing.md](./test/satellite-emulator-service-testing.md) |
-| `traffic-observer-service` | `traffic-observer-service/` | eBPF + Go Collector 服务，负责抓包 filter、ringbuf 读取和 packet metadata WS 推送。 | [traffic-observer-service.md](./traffic-observer-service.md) | [traffic-observer-service-testing.md](./test/traffic-observer-service-testing.md) |
+| `traffic-observer-service` | `traffic-observer-service/` | eBPF + Go Collector 服务，负责抓包 filter、ringbuf 读取、packet metadata WS 推送，以及 pcap / JSON 文件保存。 | [traffic-observer-service.md](./traffic-observer-service.md) | [traffic-observer-service-testing.md](./test/traffic-observer-service-testing.md) |
 | `emulator-service` | `emulator-service/` | 仿真器 API 总服务，负责 Docker 容器、网络、终端、sniffer、插件等通用能力。 | [emulator-service.md](./emulator-service.md) | [emulator-service-testing.md](./test/emulator-service-testing.md) |
 | `shared` | `shared/` | 跨语言共享库目录，目前包含 Go 版 Docker API 封装，后续可扩展 TS / Python 等版本。 | - | 见 [traffic-observer-service-testing.md](./test/traffic-observer-service-testing.md) |
 
@@ -64,7 +64,7 @@ flowchart TB
 | `internet-map-3d` | `internet-map-3d/` | Internet Map 3D 前端、IX 3D 地球和上传拓扑 3D 展示 |
 | `satellite-emulator` | `satellite-emulator/` | Satellite 3D 前端、Nginx 代理 `/api/v1`、`/emulator`、`/traffic-observer` |
 | `satellite-emulator-service` | `satellite-emulator-service/` | `POST /links`、`GET planned-shell-orbit`、`GET starlink-gateways`、`WS link-updates` |
-| `traffic-observer-service` | `traffic-observer-service/` | eBPF loader、ringbuf reader、filter control、packet WebSocket |
+| `traffic-observer-service` | `traffic-observer-service/` | eBPF loader、ringbuf reader、filter control、packet WebSocket、pcap / JSON recorder |
 | `emulator-service` | `emulator-service/` | 容器、网络、终端、sniffer、插件等仿真器 API |
 
 > `traffic-observer-service` 使用 `network_mode: host`，因此 `satellite-emulator` 的 Nginx 通过 `host.docker.internal:19092` 访问它，而不是通过 compose service DNS。

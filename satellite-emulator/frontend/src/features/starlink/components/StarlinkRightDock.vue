@@ -80,17 +80,30 @@
           :panel-disabled="trafficPanelDisabled"
           :filter-error="filterError"
           :filter-status-text="filterStatusText"
+          :filter-disabled-by-import="filterDisabledByImport"
+          :import-submitting="importSubmitting"
+          :import-error="importError"
+          :import-status-text="importStatusText"
+          :import-disabled-by-filter="importDisabledByFilter"
+          :import-file-active="importFileActive"
           :recording-enabled="recordingEnabled"
           :playback-enabled="playbackEnabled"
           :playback-paused="playbackPaused"
+          :playback-timing-mode="playbackTimingMode"
           :seek-position="seekPosition"
           :seek-max="seekMax"
+          :timeline-window-ms="timelineWindowMs"
+          :timeline-speed="timelineSpeed"
           :range-label="rangeLabel"
           :format-seek-tooltip="formatSeekTooltip"
           @update:filter-input="$emit('update:filterInput', $event)"
           @update:node-search-input="$emit('update:nodeSearchInput', $event)"
+          @update:playback-timing-mode="$emit('update:playbackTimingMode', $event)"
           @update:playback-interval-ms="$emit('update:playbackIntervalMs', $event)"
+          @update:timeline-window-ms="$emit('update:timelineWindowMs', $event)"
+          @update:timeline-speed="$emit('update:timelineSpeed', $event)"
           @submit-filter="trafficActions.submitFilter"
+          @import-replay-file="trafficActions.importReplayFile"
           @select-node-search-result="trafficActions.selectNodeSearchResult"
           @toggle-recording="trafficActions.toggleRecording"
           @toggle-playback="trafficActions.togglePlayback"
@@ -159,6 +172,7 @@ export type StarlinkDockActions = {
 
 export type TrafficReplayDockActions = {
   submitFilter: () => void;
+  importReplayFile: (files: File[]) => void;
   selectNodeSearchResult: (containerId: string) => void;
   toggleRecording: () => void;
   togglePlayback: () => void;
@@ -184,7 +198,10 @@ const props = defineProps<{
   speedDisabled: boolean;
   filterInput: string;
   nodeSearchInput: string;
+  playbackTimingMode: 'interval' | 'timeline';
   playbackIntervalMs: number;
+  timelineWindowMs: number;
+  timelineSpeed: number;
   packetCount: number;
   nodeSearchKeyword: string;
   nodeSearchResultsCount: number;
@@ -193,6 +210,12 @@ const props = defineProps<{
   trafficPanelDisabled: boolean;
   filterError: string;
   filterStatusText: string;
+  filterDisabledByImport: boolean;
+  importSubmitting: boolean;
+  importError: string;
+  importStatusText: string;
+  importDisabledByFilter: boolean;
+  importFileActive: boolean;
   recordingEnabled: boolean;
   playbackEnabled: boolean;
   playbackPaused: boolean;
@@ -207,7 +230,10 @@ const props = defineProps<{
 defineEmits<{
   'update:filterInput': [value: string];
   'update:nodeSearchInput': [value: string];
+  'update:playbackTimingMode': [value: 'interval' | 'timeline'];
   'update:playbackIntervalMs': [value: number];
+  'update:timelineWindowMs': [value: number];
+  'update:timelineSpeed': [value: number];
 }>();
 
 const dockPageDefinitions: Array<{ id: DockPage; label: string }> = [
