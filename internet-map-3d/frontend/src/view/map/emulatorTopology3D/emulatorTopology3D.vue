@@ -19,6 +19,7 @@ import {
   analyzePacketFlow,
   type PacketFlowPathStep,
 } from '@/view/map/shared/services/packetFlowAnalyzer'
+import type { Map3DSceneMode } from '@/view/map/shared/services/cesiumScene'
 
 const CAPTURE_UNAVAILABLE_TEXT = 'Live capture is unavailable<br/>when topology data comes from an uploaded docker-compose file.'
 const MIN_REPLAY_TIMER_DELAY_MS = 4
@@ -26,6 +27,18 @@ const MIN_PACKET_VISUAL_DURATION_MS = 16
 const DEFAULT_TIMELINE_WINDOW_MS = 50
 
 type PacketReplayTimingMode = 'interval' | 'timeline'
+
+const props = withDefaults(defineProps<{
+  sceneMode?: Map3DSceneMode
+  title?: string
+  uploadTitle?: string
+  uploadDescription?: string
+}>(), {
+  sceneMode: '3d',
+  title: 'Emulator Topology 3D',
+  uploadTitle: 'Emulator Topology 3D',
+  uploadDescription: 'Upload docker-compose.yml to render IX networks, ordinary networks, routers, and hosts on the globe.',
+})
 
 const mapData = ref<VisData>()
 const activeDockPage = ref<'overview' | 'settings' | 'traffic'>('overview')
@@ -778,6 +791,7 @@ onMounted(() => {
       :show-node-labels="showNodeLabels"
       :expanded-router-parent-ids="expandedParentIds"
       :orient-to-graph="orientToInitialNode"
+      :scene-mode="props.sceneMode"
       @rendered="onGlobeRendered"
       @node-click="onNodeClick"
       @node-hover="onNodeHover"
@@ -798,7 +812,7 @@ onMounted(() => {
       v-model:show-node-labels="showNodeLabels"
       v-model:show-hover-details="showHoverDetails"
       v-model:show-as-details="showAsDetails"
-      title="Emulator Topology 3D"
+      :title="props.title"
       :stats="stats"
       :as-summaries="asSummaries"
       :ix-summaries="ixSummaries"
@@ -857,8 +871,8 @@ onMounted(() => {
       <header>
         <el-icon><UploadFilled /></el-icon>
         <div>
-          <strong>Emulator Topology 3D</strong>
-          <span>Upload docker-compose.yml to render IX networks, ordinary networks, routers, and hosts on the globe.</span>
+          <strong>{{ props.uploadTitle }}</strong>
+          <span>{{ props.uploadDescription }}</span>
         </div>
       </header>
       <Upload

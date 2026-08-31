@@ -8,6 +8,7 @@ import {
   Ion,
   LabelCollection,
   LabelStyle,
+  MapMode2D,
   Math as CesiumMath,
   Material,
   NearFarScalar,
@@ -88,6 +89,12 @@ export type Map3DSceneApi = {
   onNodeClick: (handler: (node: GlobeNode) => void) => void
   onNodeHover: (handler: (node: GlobeNode | undefined, position: { x: number; y: number }) => void) => void
   destroy: () => void
+}
+
+export type Map3DSceneMode = '3d' | '2d'
+
+export type Map3DSceneOptions = {
+  mode?: Map3DSceneMode
 }
 
 export type Map3DRenderOptions = {
@@ -679,7 +686,9 @@ function shouldRenderLabel(node: GlobeNode, showRouterLabels: boolean, showNodeL
   return true
 }
 
-export function createMap3DScene(container: HTMLElement): Map3DSceneApi {
+export function createMap3DScene(container: HTMLElement, options: Map3DSceneOptions = {}): Map3DSceneApi {
+  const mode = options.mode ?? '3d'
+  const is2DMode = mode === '2d'
   const baseLayer = new ImageryLayer(
     new UrlTemplateImageryProvider({
       url: EARTH_TILE_URL,
@@ -705,8 +714,9 @@ export function createMap3DScene(container: HTMLElement): Map3DSceneApi {
     geocoder: false,
     homeButton: false,
     infoBox: false,
+    mapMode2D: is2DMode ? MapMode2D.ROTATE : MapMode2D.INFINITE_SCROLL,
     navigationHelpButton: false,
-    sceneMode: SceneMode.SCENE3D,
+    sceneMode: is2DMode ? SceneMode.SCENE2D : SceneMode.SCENE3D,
     sceneModePicker: false,
     selectionIndicator: false,
     shouldAnimate: true,
@@ -719,19 +729,21 @@ export function createMap3DScene(container: HTMLElement): Map3DSceneApi {
   viewer.scene.backgroundColor = Color.fromCssColorString('#020815')
   viewer.scene.globe.maximumScreenSpaceError = 1
   viewer.scene.globe.tileCacheSize = 500
-  viewer.scene.globe.showGroundAtmosphere = true
-  viewer.scene.globe.atmosphereHueShift = 0
-  viewer.scene.globe.atmosphereSaturationShift = -0.15
-  viewer.scene.globe.atmosphereBrightnessShift = -0.34
+  viewer.scene.globe.showGroundAtmosphere = !is2DMode
+  if (!is2DMode) {
+    viewer.scene.globe.atmosphereHueShift = 0
+    viewer.scene.globe.atmosphereSaturationShift = -0.15
+    viewer.scene.globe.atmosphereBrightnessShift = -0.34
+  }
 
   if (viewer.scene.skyAtmosphere) {
-    viewer.scene.skyAtmosphere.show = true
+    viewer.scene.skyAtmosphere.show = !is2DMode
     viewer.scene.skyAtmosphere.hueShift = 0
     viewer.scene.skyAtmosphere.saturationShift = -0.35
     viewer.scene.skyAtmosphere.brightnessShift = -0.42
   }
 
-  viewer.scene.postProcessStages.bloom.enabled = true
+  viewer.scene.postProcessStages.bloom.enabled = !is2DMode
   viewer.scene.postProcessStages.bloom.uniforms.glowOnly = false
   viewer.scene.postProcessStages.bloom.uniforms.contrast = 120
   viewer.scene.postProcessStages.bloom.uniforms.brightness = -0.25
@@ -770,14 +782,20 @@ export function createMap3DScene(container: HTMLElement): Map3DSceneApi {
   let nodeClickHandler: ((node: GlobeNode) => void) | undefined
   let nodeHoverHandler: ((node: GlobeNode | undefined, position: { x: number; y: number }) => void) | undefined
 
-  viewer.camera.setView({
-    destination: Cartesian3.fromDegrees(106, 24, 18_000_000),
-    orientation: {
-      heading: CesiumMath.toRadians(0),
-      pitch: CesiumMath.toRadians(-90),
-      roll: 0,
-    },
-  })
+  if (is2DMode) {
+    viewer.camera.setView({
+      destination: Cartesian3.fromDegrees(0, 0, 38_000_000),
+    })
+  } else {
+    viewer.camera.setView({
+      destination: Cartesian3.fromDegrees(106, 24, 18_000_000),
+      orientation: {
+        heading: CesiumMath.toRadians(0),
+        pitch: CesiumMath.toRadians(-90),
+        roll: 0,
+      },
+    })
+  }
 
   function renderGraph(graph: GlobeGraph, options: Map3DRenderOptions = {}) {
     points.removeAll()
@@ -835,6 +853,7 @@ export function createMap3DScene(container: HTMLElement): Map3DSceneApi {
         renderedNodes.set(node.sourceId, node)
         renderedNodePositions.set(node.sourceId, position)
       }
+
       if (node.searchHighlighted) {
         searchHighlightPoints.add({
           id: node,
@@ -1151,3 +1170,4 @@ export function createMap3DScene(container: HTMLElement): Map3DSceneApi {
     },
   }
 }
+

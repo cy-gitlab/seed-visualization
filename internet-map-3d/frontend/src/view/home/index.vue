@@ -66,6 +66,25 @@ import pluginImg from '@/assets/img/plugin.png'
         </li>
         <li>
           <router-link
+              :to="{ name: 'emulatorTopology2D'}"
+          >
+            <el-tooltip
+                class="box-item"
+                effect="dark"
+                content="File-based emulator topology loaded from an uploaded Docker Compose file and rendered as a Cesium 2D map."
+                placement="bottom-start"
+            >
+              <el-card>
+                <template #header>
+                  <h3>EMULATOR TOPOLOGY 2D</h3>
+                </template>
+                <el-image :src="worldMapImg" :fit="'fit'"/>
+              </el-card>
+            </el-tooltip>
+          </router-link>
+        </li>
+        <li>
+          <router-link
               :to="{ name: 'dashboard'}"
           >
             <el-tooltip

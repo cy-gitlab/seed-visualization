@@ -9,6 +9,7 @@ import {
   createMap3DScene,
   type Map3DRenderOptions,
   type Map3DSceneApi,
+  type Map3DSceneMode,
 } from '@/view/map/shared/services/cesiumScene'
 import type { GlobeGraph, GlobeNode } from '@/view/map/shared/services/globeGraph'
 
@@ -19,6 +20,7 @@ const props = defineProps<{
   showNodeLabels?: boolean
   expandedRouterParentIds?: string[]
   orientToGraph?: boolean
+  sceneMode?: Map3DSceneMode
 }>()
 const emit = defineEmits<{
   rendered: [graph: GlobeGraph]
@@ -76,7 +78,9 @@ function orientToNode(nodeId: string, height?: number) {
 
 onMounted(() => {
   if (!containerRef.value) return
-  sceneApi = createMap3DScene(containerRef.value)
+  sceneApi = createMap3DScene(containerRef.value, {
+    mode: props.sceneMode,
+  })
   sceneApi.viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_DOUBLE_CLICK)
   sceneApi.onNodeClick((node) => emit('nodeClick', node))
   sceneApi.onNodeHover((node, position) => emit('nodeHover', node, position))

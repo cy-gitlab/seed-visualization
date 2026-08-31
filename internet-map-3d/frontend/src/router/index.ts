@@ -28,6 +28,16 @@ export const defaultRouters: RouteRecord[] = [
                 },
             },
             {
+                path: '/uploadMap2D',
+                component: () => import('@/view/map/emulatorTopology2D/emulatorTopology2D.vue'),
+                name: 'emulatorTopology2D',
+                meta: {
+                    title: "EmulatorTopology2D",
+                    icon: 'HomeFilled',
+                    componentName: 'EmulatorTopology2D',
+                },
+            },
+            {
                 path: '/map',
                 component: () => import('@/view/map/liveEmulatorTopology3D/liveEmulatorTopology3D.vue'),
                 name: 'liveEmulatorTopology3D',
