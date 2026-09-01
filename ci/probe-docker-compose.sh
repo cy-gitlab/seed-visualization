@@ -49,13 +49,13 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[ci] starting application lifecycle"
-compose up -d emulator-service satellite-emulator-service internet-map internet-map-3d satellite-emulator
+compose up -d seedemu_emulator_service seedemu_satellite_emulator_service seedemu_internet_map seedemu_internet_map_globe seedemu_satellite_emulator
 
 retry_curl "emulator-service-env" "http://127.0.0.1:7071/api/v1/env.js" "window.__ENV__"
 retry_curl "satellite-service-orbits" "http://127.0.0.1:9091/api/v1/satellite/planned-shell-orbit" "\"ok\":true"
 retry_curl "satellite-service-gateways" "http://127.0.0.1:9091/api/v1/satellite/starlink-gateways" "\"ok\":true"
 retry_curl "internet-map-frontend" "http://127.0.0.1:8080/" "<!doctype html"
-retry_curl "internet-map-3d-frontend" "http://127.0.0.1:8090/" "<!doctype html"
+retry_curl "internet-map-globe-frontend" "http://127.0.0.1:8090/" "<!doctype html"
 retry_curl "satellite-frontend" "http://127.0.0.1:9090/" "<!doctype html"
 retry_curl "satellite-nginx-api-proxy" "http://127.0.0.1:9090/api/v1/satellite/planned-shell-orbit" "\"ok\":true"
 retry_curl "satellite-nginx-emulator-proxy" "http://127.0.0.1:9090/emulator/api/v1/env.js" "window.__ENV__"

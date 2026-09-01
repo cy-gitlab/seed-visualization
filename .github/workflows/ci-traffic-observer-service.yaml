@@ -137,4 +137,4 @@ jobs:
 
       - name: Docker build
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-docker-build }}
-        run: docker compose build traffic-observer-service
+        run: docker compose build seedmu_traffic_observer_service

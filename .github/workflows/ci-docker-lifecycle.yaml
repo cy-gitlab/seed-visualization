@@ -7,7 +7,7 @@ on:
   #   paths:
   #     - "emulator-service/**"
   #     - "internet-map/**"
-  #     - "internet-map-3d/**"
+  #     - "internet-map-globe/**"
   #     - "satellite-emulator/**"
   #     - "satellite-emulator-service/**"
   #     - "docker-compose.yml"
@@ -19,7 +19,7 @@ on:
   #   paths:
   #     - "emulator-service/**"
   #     - "internet-map/**"
-  #     - "internet-map-3d/**"
+  #     - "internet-map-globe/**"
   #     - "satellite-emulator/**"
   #     - "satellite-emulator-service/**"
   #     - "docker-compose.yml"
@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Build lifecycle images
-        run: docker compose build emulator-service satellite-emulator-service internet-map internet-map-3d satellite-emulator
+        run: docker compose build seedemu_emulator_service seedemu_satellite_emulator_service seedemu_internet_map seedemu_internet_map_globe seedemu_satellite_emulator
 
       - name: Run compose lifecycle probes
         run: bash ci/probe-docker-compose.sh

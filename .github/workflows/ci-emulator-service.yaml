@@ -114,4 +114,4 @@ jobs:
       - name: Docker build
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-docker-build }}
         working-directory: .
-        run: docker compose build emulator-service
+        run: docker compose build seedemu_emulator_service

@@ -1,4 +1,4 @@
-services:
+﻿services:
   seedemu_emulator_service:
     container_name: seedemu_emulator_service
     image: handsonsecurity/seedemu-emulator-service:3.0
@@ -29,11 +29,11 @@ services:
       - seed-visualization
     restart: unless-stopped
 
-  seedemu_internet_map_3d:
-    container_name: seedemu_internet_map_3d
-    image: handsonsecurity/seedemu-internet-map-3d:3.0
+  seedemu_internet_map_globe:
+    container_name: seedemu_internet_map_globe
+    image: handsonsecurity/seedemu-internet-map-globe:3.0
     build:
-      context: internet-map-3d
+      context: internet-map-globe
       dockerfile: Dockerfile
     depends_on:
       - seedemu_emulator_service
