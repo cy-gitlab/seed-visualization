@@ -1,9 +1,11 @@
 # internet-map-globe
 
-`internet-map-globe` is the standalone globe emulator topology frontend. This document currently focuses on the two emulator topology pages:
+`internet-map-globe` is the standalone Cesium emulator topology frontend. This document focuses on the live and file-based emulator topology pages:
 
 - `/upload/3d`: file-based 3D emulator topology page backed by `emulatorTopology3D.vue`.
+- `/upload/2d`: file-based 2D emulator topology page backed by `emulatorTopology2D.vue`.
 - `/map/3d`: live 3D emulator topology page backed by `liveEmulatorTopology3D.vue` and Docker API data through `emulator-service`.
+- `/map/2d`: live 2D emulator topology page backed by `liveEmulatorTopology2D.vue` and Docker API data through `emulator-service`.
 
 The Docker Compose service name is `seedemu_internet_map_globe`. The default published port is `8090:80`.
 
@@ -71,7 +73,7 @@ flowchart TB
     Upload["<b>components/Upload/index.vue</b><br/>emits <code>update:map-data</code>"]
     Loading["<b>shared/components/LoadingOverlay.vue</b><br/>controlled by <code>loadingVisible</code>"]
     Globe["<b>components/Map3DGlobe/index.vue</b><br/><code>render()</code><br/><code>animatePacketHop()</code><br/><code>flashNodes()</code>"]
-    Hover["<b>shared/components/TopologyNodeHoverCard.vue</b><br/>node hover details"]
+    Hover["<b>shared/components/TopologyNodeHoverCard.vue</b><br/>static node/network hover details"]
     Dock["<b>shared/components/EmulatorTopologyDock.vue</b><br/>right-bottom tab shell"]
   end
 
@@ -225,12 +227,14 @@ flowchart TB
   subgraph HttpData["HTTP data loading"]
     Containers["<code>reqGetContainersList()</code><br/>api/map.ts -> /container"]
     Networks["<code>reqGetNetworksList()</code><br/>api/map.ts -> /network"]
+    BgpApi["<code>reqGetBgpPeers()</code><br/><code>reqSetBgpPeer()</code><br/>api/map.ts -> /container/:id/bgp"]
+    NetApi["<code>reqGetNetworkStatus()</code><br/><code>reqSetNetworkStatus()</code><br/>api/map.ts -> /container/:id/net"]
     FilterGet["<code>fetchTrafficObserverFilter()</code><br/>trafficObserverService.ts -> GET /filter"]
   end
 
   subgraph Shell["Page shell components"]
     Globe["<b>components/Map3DGlobe/index.vue</b><br/><code>render()</code><br/><code>animatePacketHop()</code><br/><code>flashNodes()</code>"]
-    Hover["<b>shared/components/TopologyNodeHoverCard.vue</b><br/>node hover details"]
+    Hover["<b>shared/components/TopologyNodeHoverCard.vue</b><br/>node/network hover details<br/>Actions and BGP sessions in live mode"]
     Loading["<b>shared/components/LoadingOverlay.vue</b><br/>loading overlay"]
     Dock["<b>shared/components/EmulatorTopologyDock.vue</b><br/>right-bottom tab shell"]
   end
@@ -251,7 +255,9 @@ flowchart TB
   FilterGet --> Page
   Page --> Globe
   Globe -->|"<code>rendered</code>, <code>nodeClick</code>, <code>nodeHover</code>"| Page
-  Page --> Hover
+  Page -->|"hovered node<br/>actions-enabled"| Hover
+  Hover --> BgpApi
+  Hover --> NetApi
   Page --> Loading
   Page --> Dock
   Dock --> Overview
@@ -274,6 +280,7 @@ flowchart LR
     SetTopology["<code>setTopologyData()</code><br/>store Docker API data"]
     RenderGraph["<code>renderGraph()</code><br/>build display graph"]
     SubmitFilter["<code>submitTrafficFilter()</code><br/>PUT live filter"]
+    HoverRuntime["shared/components/TopologyNodeHoverCard.vue<br/><code>loadRuntimeInfo()</code><br/><code>toggleBgpPeer()</code><br/><code>toggleNetworkStatus()</code><br/><code>launchConsole()</code>"]
     LivePacket["<code>handleLivePacket()</code><br/>append/queue live packet"]
     ReplayFns["<code>togglePacketReplay()</code><br/><code>playNextPacketReplayEvent()</code><br/><code>playPacketReplayPacketAtIndex()</code>"]
     FlashQueue["<code>enqueueLivePacketAnimation()</code><br/><code>flashNextLivePacketAnimation()</code><br/><code>flashLivePacketJobs()</code>"]
@@ -281,8 +288,10 @@ flowchart LR
 
   subgraph ApiFlow["Live topology HTTP flow"]
     ApiMap["api/map.ts<br/><code>reqGetContainersList()</code><br/><code>reqGetNetworksList()</code>"]
+    RuntimeApi["api/map.ts<br/><code>reqGetBgpPeers()</code><br/><code>reqSetBgpPeer()</code><br/><code>reqGetNetworkStatus()</code><br/><code>reqSetNetworkStatus()</code>"]
     Request["utils/request.ts<br/>Axios wrapper"]
     EmulatorApi["emulator-service<br/><code>/container</code><br/><code>/network</code>"]
+    RuntimeEndpoints["emulator-service<br/><code>/container/:id/bgp</code><br/><code>/container/:id/bgp/:peer</code><br/><code>/container/:id/net</code>"]
   end
 
   subgraph TrafficFlow["Traffic observer flow"]
@@ -305,6 +314,8 @@ flowchart LR
   end
 
   LoadTopology --> ApiMap --> Request --> EmulatorApi --> SetTopology --> RenderGraph
+  HoverRuntime --> RuntimeApi
+  RuntimeApi --> Request --> RuntimeEndpoints
   LoadFilter --> TrafficSvc --> Observer
   RenderGraph --> GraphBuilder --> Map3DGlobe --> Scene
   RenderGraph --> Search
@@ -387,7 +398,8 @@ Live capture state guards:
 | Area | File | Main methods | Called by | Purpose |
 | --- | --- | --- | --- | --- |
 | Live topology load | `view/map/liveEmulatorTopology3D/liveEmulatorTopology3D.vue` | `loadDockerTopology`, `setTopologyData`, `renderGraph` | Page mount and refresh action | Loads Docker API data and renders the current topology. |
-| Docker API wrapper | `api/map.ts` | `reqGetContainersList`, `reqGetNetworksList` | `loadDockerTopology` | Fetches containers and networks from `emulator-service`. |
+| Docker API wrapper | `api/map.ts` | `reqGetContainersList`, `reqGetNetworksList`, `reqGetBgpPeers`, `reqSetBgpPeer`, `reqGetNetworkStatus`, `reqSetNetworkStatus` | `loadDockerTopology`, `TopologyNodeHoverCard.vue` | Fetches containers/networks and performs live container runtime controls through `emulator-service`. |
+| Node hover runtime details | `shared/components/TopologyNodeHoverCard.vue` | `loadRuntimeInfo`, `toggleBgpPeer`, `toggleNetworkStatus`, `launchConsole` | Cesium node hover event from live page | Shows container details, BGP sessions, Launch console, Disconnect/Re-connect, and Refresh actions. |
 | Live filter API | `view/map/liveEmulatorTopology3D/services/trafficObserverService.ts` | `fetchTrafficObserverFilter`, `setTrafficObserverFilter` | `loadTrafficFilter`, `submitTrafficFilter` | Reads and updates capture filter state on `traffic-observer-service`. |
 | WebSocket client | `view/map/liveEmulatorTopology3D/services/trafficObserverService.ts` | `TrafficObserverClient.connect`, `disconnect`, `scheduleReconnect`, `toReplayEvent` | `submitTrafficFilter`, page lifecycle | Receives packet JSON and normalizes it to replay events. |
 | Topology graph | `shared/services/emulatorTopologyGraph.ts` | `createEmulatorTopologyGraph` | `renderGraph` | Builds globe graph from live Docker container/network data. |
@@ -418,6 +430,10 @@ Live capture state guards:
 | --- | --- | --- | --- |
 | `liveEmulatorTopology3D.vue` | `api/map.ts` -> `utils/request.ts` | `emulator-service /container` | Load live emulator containers. |
 | `liveEmulatorTopology3D.vue` | `api/map.ts` -> `utils/request.ts` | `emulator-service /network` | Load live emulator networks. |
+| `TopologyNodeHoverCard.vue` | `api/map.ts` -> `utils/request.ts` | `emulator-service /container/:id/bgp` | Load live router BGP sessions. |
+| `TopologyNodeHoverCard.vue` | `api/map.ts` -> `utils/request.ts` | `emulator-service /container/:id/bgp/:peer` | Enable or disable one BGP peer. |
+| `TopologyNodeHoverCard.vue` | `api/map.ts` -> `utils/request.ts` | `emulator-service /container/:id/net` | Read or update container network connectivity. |
+| `TopologyNodeHoverCard.vue` | `utils/window-manager.ts` | iframe `/console#<container-id>` inside current page | Launch container console in the globe page, consistent with `internet-map`. |
 | `liveEmulatorTopology3D.vue` | live traffic observer service | `traffic-observer-service GET /filter` | Load current capture filter. |
 | `liveEmulatorTopology3D.vue` | live traffic observer service | `traffic-observer-service PUT /filter` | Start, update, or stop live capture. |
 | `liveEmulatorTopology3D.vue` | live traffic observer client | `traffic-observer-service WS /ws/packets` | Receive live packet messages. |

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-row>
     <el-col :span="24">
       <el-menu
@@ -17,14 +17,12 @@
         </el-menu-item>
         <div class="right-items">
           <el-menu-item index="/home">Home</el-menu-item>
-          <el-menu-item index="/dashboard">Dashboard</el-menu-item>
-          <el-menu-item index="/plugin">Plugin</el-menu-item>
-          <el-sub-menu index="/mapIndex">
+          <el-sub-menu index="/map">
             <template #title>Map</template>
-            <el-menu-item index="/map/3d">LiveEmulatorTopology3D</el-menu-item>
-            <el-menu-item index="/map/2d">LiveEmulatorTopology2D</el-menu-item>
-            <el-menu-item index="/upload/3d">EmulatorTopology3D</el-menu-item>
-            <el-menu-item index="/upload/2d">EmulatorTopology2D</el-menu-item>
+            <el-menu-item index="/map/2d">Map 2D</el-menu-item>
+            <el-menu-item index="/map/3d">Map 3D</el-menu-item>
+            <el-menu-item index="/upload/2d">Upload 2D</el-menu-item>
+            <el-menu-item index="/upload/3d">Upload 3D</el-menu-item>
           </el-sub-menu>
         </div>
       </el-menu>

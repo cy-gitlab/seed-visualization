@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import Map3DGlobe from '@/components/Map3DGlobe/index.vue'
 import EmulatorTopologyDock from '@/view/map/shared/components/EmulatorTopologyDock.vue'
@@ -22,6 +22,7 @@ import {
   setTrafficObserverFilter,
   TrafficObserverClient,
 } from './services/trafficObserverService'
+import { WindowManager } from '@/utils/window-manager'
 
 const LIVE_FLOW_IDLE_RESET_MS = 2500
 const LIVE_FLOW_STALE_MS = 3000
@@ -78,6 +79,7 @@ const trafficFilterSubmitting = ref(false)
 const trafficCaptureActive = ref(false)
 let packetReplayTimerId: number | undefined
 const packetReplayScheduledTimerIds = new Set<number>()
+let consoleWindowManager: WindowManager | undefined
 let packetReplayGeneration = 0
 let trafficObserverClient: TrafficObserverClient | undefined
 let lastLivePacketReceivedAtMs = 0
@@ -145,6 +147,16 @@ const packetReplayStepCount = computed(() =>
     ? packetReplayEvents.value.length
     : packetReplayPlaylist.value.length || packetReplayFlowPath.value.length || packetReplayEvents.value.length,
 )
+
+function initConsoleWindowManager() {
+  if (consoleWindowManager) return
+  consoleWindowManager = new WindowManager('globe-console-area', 'globe-console-taskbar')
+}
+
+function launchContainerConsole(nodeId: string, title: string) {
+  initConsoleWindowManager()
+  consoleWindowManager?.createWindow(nodeId.slice(0, 12), title, { cmd: '' }, true)
+}
 
 async function setTopologyData(value: { nodes: EmulatorNode[]; nets: EmulatorNetwork[] }) {
   topologyLoaded.value = true
@@ -1238,6 +1250,8 @@ onActivated(() => {
 
 onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  await nextTick()
+  initConsoleWindowManager()
   await Promise.all([
     loadTrafficFilter(),
     loadDockerTopology(),
@@ -1264,6 +1278,9 @@ onMounted(async () => {
       v-if="showHoverDetails && hoveredNode"
       :node="hoveredNode"
       :position="hoverPosition"
+      actions-enabled
+      @refresh="loadDockerTopology"
+      @launch-console="launchContainerConsole"
     />
 
     <EmulatorTopologyDock
@@ -1276,6 +1293,7 @@ onMounted(async () => {
       v-model:show-node-labels="showNodeLabels"
       v-model:show-hover-details="showHoverDetails"
       v-model:show-as-details="showAsDetails"
+      bottom-offset="58px"
       :title="props.title"
       :stats="stats"
       :as-summaries="asSummaries"
@@ -1324,7 +1342,23 @@ onMounted(async () => {
     </EmulatorTopologyDock>
 
     <LoadingOverlay :visible="loadingVisible" />
+    <div id="globe-console-area" class="console-area"></div>
+    <div id="globe-console-taskbar" class="taskbar hide"></div>
   </main>
 </template>
 
 <style scoped lang="scss" src="./styles/emulator-topology-3d.scss"></style>
+<style lang="scss">
+@use '@/style/common/window-manager.css' as *;
+
+.console-area {
+  position: fixed;
+  inset: 0;
+  z-index: 90000;
+  pointer-events: none;
+}
+
+.console-area .console-window {
+  pointer-events: auto;
+}
+</style>

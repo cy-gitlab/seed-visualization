@@ -1,8 +1,8 @@
 ﻿<script setup lang="ts">
-import mapImg from '@/assets/img/map.png'
-import worldMapImg from '@/assets/img/worldMap.png'
-import dashboardImg from '@/assets/img/dashboard.png'
-import pluginImg from '@/assets/img/plugin.png'
+import map2D from '@/assets/img/map-2d.png'
+import map3D from '@/assets/img/map-3d.png'
+import upload2D from '@/assets/img/upload-2d.png'
+import upload3D from '@/assets/img/upload-3d.png'
 
 </script>
 
@@ -11,8 +11,8 @@ import pluginImg from '@/assets/img/plugin.png'
     <el-col>
       <section class="jumbotron text-center">
         <div class="container">
-          <h1>INTERNET MAP 3D</h1>
-          <p class="lead text-muted">This is a work-in-progress prototype of the internet-map..</p>
+          <h1>INTERNET MAP GLOBE</h1>
+          <p class="lead text-muted">This is a work-in-progress prototype of the internet-map-globe..</p>
         </div>
       </section>
     </el-col>
@@ -20,7 +20,7 @@ import pluginImg from '@/assets/img/plugin.png'
   <el-row class="menu" style="padding: 20px 0" :justify="'center'">
     <el-col :span="22">
       <ul style="
-        display: grid;grid-template-columns: repeat(3, 1fr);
+        display: grid;grid-template-columns: repeat(2, 1fr);
         gap: 20px;
         list-style: none;
         padding: 0;
@@ -38,9 +38,9 @@ import pluginImg from '@/assets/img/plugin.png'
             >
               <el-card>
                 <template #header>
-                  <h3>LIVE EMULATOR TOPOLOGY</h3>
+                  <h3>LIVE EMULATOR TOPOLOGY 3D</h3>
                 </template>
-                <el-image :src="worldMapImg" :fit="'fit'"/>
+                <el-image :src="map3D" :fit="'fit'"/>
               </el-card>
             </el-tooltip>
           </router-link>
@@ -57,9 +57,9 @@ import pluginImg from '@/assets/img/plugin.png'
             >
               <el-card>
                 <template #header>
-                  <h3>EMULATOR TOPOLOGY</h3>
+                  <h3>EMULATOR TOPOLOGY 2D</h3>
                 </template>
-                <el-image :src="mapImg" :fit="'fit'"/>
+                <el-image :src="upload3D" :fit="'fit'"/>
               </el-card>
             </el-tooltip>
           </router-link>
@@ -78,7 +78,7 @@ import pluginImg from '@/assets/img/plugin.png'
                 <template #header>
                   <h3>LIVE EMULATOR TOPOLOGY 2D</h3>
                 </template>
-                <el-image :src="worldMapImg" :fit="'fit'"/>
+                <el-image :src="map2D" :fit="'fit'"/>
               </el-card>
             </el-tooltip>
           </router-link>
@@ -97,45 +97,7 @@ import pluginImg from '@/assets/img/plugin.png'
                 <template #header>
                   <h3>EMULATOR TOPOLOGY 2D</h3>
                 </template>
-                <el-image :src="worldMapImg" :fit="'fit'"/>
-              </el-card>
-            </el-tooltip>
-          </router-link>
-        </li>
-        <li>
-          <router-link
-              :to="{ name: 'dashboard'}"
-          >
-            <el-tooltip
-                class="box-item"
-                effect="dark"
-                content="seedemu dashboard, displays current emulator nodes and networks."
-                placement="bottom"
-            >
-              <el-card>
-                <template #header>
-                  <h3>DASHBOARD</h3>
-                </template>
-                <el-image :src="dashboardImg" :fit="'fit'"/>
-              </el-card>
-            </el-tooltip>
-          </router-link>
-        </li>
-        <li>
-          <router-link
-              :to="{ name: 'plugin'}"
-          >
-            <el-tooltip
-                class="box-item"
-                effect="dark"
-                content="Plugin installation page."
-                placement="bottom"
-            >
-              <el-card>
-                <template #header>
-                  <h3>PLUGIN</h3>
-                </template>
-                <el-image :src="pluginImg" :fit="'fit'"/>
+                <el-image :src="upload2D" :fit="'fit'"/>
               </el-card>
             </el-tooltip>
           </router-link>

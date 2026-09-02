@@ -55,6 +55,15 @@ const LINK_CURVE_HEIGHT_MAX = 1_050_000
 const MAX_AVOIDANCE_SEGMENTS = 220
 const MAX_AVOIDANCE_POINTS = 260
 const AVOIDANCE_PARENT_DISTANCE = 52
+const LABEL_LIMIT_THRESHOLD = 1200
+const LARGE_GRAPH_LABEL_LIMIT = 900
+const HUGE_GRAPH_LABEL_LIMIT = 650
+const LABEL_LIMIT_THRESHOLD_2D = 500
+const LARGE_GRAPH_LABEL_LIMIT_2D = 360
+const HUGE_GRAPH_LABEL_LIMIT_2D = 220
+const LINK_CURVE_SEGMENTS_2D = 14
+const HOVER_PICK_THROTTLE_MS_2D = 50
+const HOVER_PICK_MIN_MOVE_PX_2D = 4
 
 type GeoPoint = {
   lat: number
@@ -290,7 +299,13 @@ function vectorToGeoPoint(vector: ReturnType<typeof getUnitSpherePoint>): GeoPoi
   }
 }
 
-function getSameParentCurvePositions(from: GlobeNode, to: GlobeNode, renderGeos: Map<string, GeoPoint>, nodeScale: number) {
+function getSameParentCurvePositions(
+  from: GlobeNode,
+  to: GlobeNode,
+  renderGeos: Map<string, GeoPoint>,
+  nodeScale: number,
+  segmentCount = LINK_CURVE_SEGMENTS,
+) {
   const fromPoint = getRenderGeoPoint(from, renderGeos)
   const toPoint = getRenderGeoPoint(to, renderGeos)
   const midLat = (fromPoint.lat + toPoint.lat) / 2
@@ -309,8 +324,8 @@ function getSameParentCurvePositions(from: GlobeNode, to: GlobeNode, renderGeos:
   const controlHeight = SAME_PARENT_CURVE_HEIGHT + Math.max(fromHeight, toHeight)
   const positions: Cartesian3[] = []
 
-  for (let index = 0; index <= LINK_CURVE_SEGMENTS; index += 1) {
-    const t = index / LINK_CURVE_SEGMENTS
+  for (let index = 0; index <= segmentCount; index += 1) {
+    const t = index / segmentCount
     const oneMinusT = 1 - t
     const lat = oneMinusT * oneMinusT * fromPoint.lat + 2 * oneMinusT * t * control.lat + t * t * toPoint.lat
     const fromToLon = fromPoint.lon + getLongitudeDelta(fromPoint.lon, toPoint.lon) * t
@@ -338,7 +353,13 @@ function geoDistance(a: GeoPoint, b: GeoPoint) {
   return Math.hypot(lonDelta, a.lat - b.lat)
 }
 
-function getSmoothLinkCurvePositions(from: GlobeNode, to: GlobeNode, renderGeos: Map<string, GeoPoint>, nodeScale: number) {
+function getSmoothLinkCurvePositions(
+  from: GlobeNode,
+  to: GlobeNode,
+  renderGeos: Map<string, GeoPoint>,
+  nodeScale: number,
+  segmentCount = LINK_CURVE_SEGMENTS,
+) {
   const fromPoint = getRenderGeoPoint(from, renderGeos)
   const toPoint = getRenderGeoPoint(to, renderGeos)
   const start = getUnitSpherePoint(fromPoint)
@@ -351,12 +372,12 @@ function getSmoothLinkCurvePositions(from: GlobeNode, to: GlobeNode, renderGeos:
   const arcLift = Math.max(LINK_CURVE_HEIGHT_MIN, Math.min(LINK_CURVE_HEIGHT_MAX, distance * 18_000))
 
   if (omega < 0.0001 || Math.abs(sinOmega) < 0.0001) {
-    return getSameParentCurvePositions(from, to, renderGeos, nodeScale)
+    return getSameParentCurvePositions(from, to, renderGeos, nodeScale, segmentCount)
   }
 
   const positions: Cartesian3[] = []
-  for (let index = 0; index <= LINK_CURVE_SEGMENTS; index += 1) {
-    const t = index / LINK_CURVE_SEGMENTS
+  for (let index = 0; index <= segmentCount; index += 1) {
+    const t = index / segmentCount
     const startScale = Math.sin((1 - t) * omega) / sinOmega
     const endScale = Math.sin(t * omega) / sinOmega
     const point = vectorToGeoPoint({
@@ -686,6 +707,41 @@ function shouldRenderLabel(node: GlobeNode, showRouterLabels: boolean, showNodeL
   return true
 }
 
+function getLabelPriority(node: GlobeNode) {
+  if (node.searchHighlighted) return 0
+  if (node.highlighted) return 1
+  if (node.kind === 'star') return 2
+  if (node.kind === 'dot') return 3
+  if (node.kind === 'diamond') return 4
+  if (node.kind === 'hexagon') return 5
+  return 6
+}
+
+function selectRenderableLabelIds(nodes: GlobeNode[], showRouterLabels: boolean, showNodeLabels: boolean, is2DMode = false) {
+  const candidates = nodes.filter((node) => shouldRenderLabel(node, showRouterLabels, showNodeLabels))
+  const threshold = is2DMode ? LABEL_LIMIT_THRESHOLD_2D : LABEL_LIMIT_THRESHOLD
+  if (candidates.length <= threshold) {
+    return new Set(candidates.map((node) => node.id))
+  }
+
+  const limit = is2DMode
+    ? nodes.length >= 4000 ? HUGE_GRAPH_LABEL_LIMIT_2D : LARGE_GRAPH_LABEL_LIMIT_2D
+    : nodes.length >= 4000 ? HUGE_GRAPH_LABEL_LIMIT : LARGE_GRAPH_LABEL_LIMIT
+  const selected = new Set<string>()
+  const sorted = [...candidates].sort((left, right) => getLabelPriority(left) - getLabelPriority(right))
+
+  for (const node of sorted) {
+    if (node.searchHighlighted || node.highlighted) {
+      selected.add(node.id)
+      continue
+    }
+    if (selected.size >= limit) continue
+    selected.add(node.id)
+  }
+
+  return selected
+}
+
 export function createMap3DScene(container: HTMLElement, options: Map3DSceneOptions = {}): Map3DSceneApi {
   const mode = options.mode ?? 'globe'
   const is2DMode = mode === '2d'
@@ -779,8 +835,41 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
   const flashPointByNodeId = new Map<string, any>()
   const flashTimerIds = new Map<string, number>()
   let hoveredStarId: string | undefined
+  let cameraInteracting = false
+  let cameraInteractionStartedAtMs = 0
+  let bloomEnabledBeforeInteraction = viewer.scene.postProcessStages.bloom.enabled
+  let hoverPickFrameId: number | undefined
+  let pendingHoverPosition: Cartesian2 | undefined
+  let lastHoverPickAtMs = 0
+  let lastHoverPickPosition: Cartesian2 | undefined
   let nodeClickHandler: ((node: GlobeNode) => void) | undefined
   let nodeHoverHandler: ((node: GlobeNode | undefined, position: { x: number; y: number }) => void) | undefined
+
+  function beginInteractionMode() {
+    if (cameraInteracting) return
+    cameraInteracting = true
+    cameraInteractionStartedAtMs = performance.now()
+    labels.show = false
+    bloomEnabledBeforeInteraction = viewer.scene.postProcessStages.bloom.enabled
+    viewer.scene.postProcessStages.bloom.enabled = false
+    setHoveredStar(undefined)
+    nodeHoverHandler?.(undefined, { x: 0, y: 0 })
+  }
+
+  function endInteractionMode() {
+    if (!cameraInteracting) return
+    const pausedMs = Math.max(0, performance.now() - cameraInteractionStartedAtMs)
+    cameraInteracting = false
+    cameraInteractionStartedAtMs = 0
+    labels.show = true
+    viewer.scene.postProcessStages.bloom.enabled = bloomEnabledBeforeInteraction
+    packetHopTracks.forEach((track) => {
+      track.startedAtMs += pausedMs
+    })
+  }
+
+  viewer.camera.moveStart.addEventListener(beginInteractionMode)
+  viewer.camera.moveEnd.addEventListener(endInteractionMode)
 
   if (is2DMode) {
     viewer.camera.setView({
@@ -822,6 +911,8 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     const pointScale = clampNodeScale(nodeScale)
     const spreadScale = pointScale * LINK_SPREAD_MULTIPLIER
     const renderNodes = graph.nodes.filter((node) => shouldRenderRouterNode(node, expandedRouterParentIds))
+    const renderLabelIds = selectRenderableLabelIds(renderNodes, showRouterLabels, showNodeLabels, is2DMode)
+    const linkCurveSegments = is2DMode ? LINK_CURVE_SEGMENTS_2D : LINK_CURVE_SEGMENTS
 
     const nodeById = new Map(renderNodes.map((node) => [node.id, node]))
     const renderGeos = getAvoidedRenderGeos(renderNodes, nodeById, spreadScale)
@@ -835,8 +926,8 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
 
       const sameParentRouterEdge = !edge.internalRouterLink && from.kind === 'dot' && to.kind === 'dot' && from.parentId && from.parentId === to.parentId
       const positions = sameParentRouterEdge
-        ? getSameParentCurvePositions(from, to, renderGeos, pointScale)
-        : getSmoothLinkCurvePositions(from, to, renderGeos, pointScale)
+        ? getSameParentCurvePositions(from, to, renderGeos, pointScale, linkCurveSegments)
+        : getSmoothLinkCurvePositions(from, to, renderGeos, pointScale, linkCurveSegments)
 
       lines.add({
         positions,
@@ -902,7 +993,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
         })
       }
 
-      if (shouldRenderLabel(node, showRouterLabels, showNodeLabels)) {
+      if (renderLabelIds.has(node.id)) {
         labels.add({
           position,
           text: node.label,
@@ -921,6 +1012,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
   }
 
   function updatePacketHops() {
+    if (cameraInteracting) return
     if (packetHopTracks.length === 0) return
     const nowMs = performance.now()
     for (let index = packetHopTracks.length - 1; index >= 0; index -= 1) {
@@ -1088,6 +1180,41 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     }
   }
 
+  function shouldSkip2DHoverPick(position: Cartesian2) {
+    if (!is2DMode) return false
+    const nowMs = performance.now()
+    if (lastHoverPickPosition) {
+      const dx = position.x - lastHoverPickPosition.x
+      const dy = position.y - lastHoverPickPosition.y
+      if (Math.hypot(dx, dy) < HOVER_PICK_MIN_MOVE_PX_2D) return true
+    }
+    return nowMs - lastHoverPickAtMs < HOVER_PICK_THROTTLE_MS_2D
+  }
+
+  function runHoverPick(position: Cartesian2) {
+    if (cameraInteracting || shouldSkip2DHoverPick(position)) return
+    lastHoverPickAtMs = performance.now()
+    lastHoverPickPosition = Cartesian2.clone(position, lastHoverPickPosition)
+    const pickedNode = pickGlobeNode(position)
+    setHoveredStar(pickedNode?.kind === 'star' ? pickedNode.id : undefined)
+    nodeHoverHandler?.(pickedNode, toClientPosition(position))
+  }
+
+  function scheduleHoverPick(position: Cartesian2) {
+    if (!is2DMode) {
+      runHoverPick(position)
+      return
+    }
+    pendingHoverPosition = Cartesian2.clone(position, pendingHoverPosition)
+    if (hoverPickFrameId !== undefined) return
+    hoverPickFrameId = window.requestAnimationFrame(() => {
+      hoverPickFrameId = undefined
+      const nextPosition = pendingHoverPosition
+      pendingHoverPosition = undefined
+      if (nextPosition) runHoverPick(nextPosition)
+    })
+  }
+
   function setHoveredStar(nextStarId?: string) {
     if (hoveredStarId === nextStarId) return
 
@@ -1149,9 +1276,8 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     onNodeClick(handler: (node: GlobeNode) => void) {
       nodeClickHandler = handler
       viewer.screenSpaceEventHandler.setInputAction((event: { endPosition: Cartesian2 }) => {
-        const pickedNode = pickGlobeNode(event.endPosition)
-        setHoveredStar(pickedNode?.kind === 'star' ? pickedNode.id : undefined)
-        nodeHoverHandler?.(pickedNode, toClientPosition(event.endPosition))
+        if (cameraInteracting) return
+        scheduleHoverPick(event.endPosition)
       }, ScreenSpaceEventType.MOUSE_MOVE)
       viewer.screenSpaceEventHandler.setInputAction((event: { position: Cartesian2 }) => {
         const pickedNode = pickGlobeNode(event.position)
@@ -1165,6 +1291,12 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     destroy() {
       clearFlashNodes()
       clearPacketAnimations()
+      if (hoverPickFrameId !== undefined) {
+        window.cancelAnimationFrame(hoverPickFrameId)
+        hoverPickFrameId = undefined
+      }
+      viewer.camera.moveStart.removeEventListener(beginInteractionMode)
+      viewer.camera.moveEnd.removeEventListener(endInteractionMode)
       viewer.scene.preRender.removeEventListener(updatePacketHops)
       viewer.destroy()
     },

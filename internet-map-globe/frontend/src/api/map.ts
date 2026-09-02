@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import type { BgpPeer } from '@/utils/types'
 
 export interface containerType{
     id: string,
@@ -35,4 +36,31 @@ export const reqGetNetworksList = (params: {}): Promise<ApiRespond<any>> => {
         URL.NETWORK_URL,
         {params}
     )
+}
+
+export const reqGetBgpPeers = (nodeId: string): Promise<ApiRespond<BgpPeer[]>> => {
+    return request.get(`${URL.CONTAINER_URL}/${nodeId}/bgp`)
+}
+
+export const reqSetBgpPeer = (
+    nodeId: string,
+    peerName: string,
+    enabled: boolean,
+): Promise<ApiRespond<unknown>> => {
+    return request.post(`${URL.CONTAINER_URL}/${nodeId}/bgp/${peerName}`, {
+        status: enabled,
+    })
+}
+
+export const reqGetNetworkStatus = (nodeId: string): Promise<ApiRespond<boolean>> => {
+    return request.get(`${URL.CONTAINER_URL}/${nodeId}/net`)
+}
+
+export const reqSetNetworkStatus = (
+    nodeId: string,
+    enabled: boolean,
+): Promise<ApiRespond<unknown>> => {
+    return request.post(`${URL.CONTAINER_URL}/${nodeId}/net`, {
+        status: enabled,
+    })
 }

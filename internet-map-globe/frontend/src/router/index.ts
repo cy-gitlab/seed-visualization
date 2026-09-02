@@ -8,8 +8,20 @@ export const defaultRouters: RouteRecord[] = [
     {
         path: '/',
         component: () => import('@/view/layout/index.vue'),
-        redirect: {name: "liveEmulatorTopology3D"},
+        redirect: {name: "home"},
         name: 'layout',
+        children: [
+            {
+                path: '/home',
+                component: () => import('@/view/home/index.vue'),
+                name: 'home',
+                meta: {
+                    title: "Home",
+                    icon: 'HomeFilled',
+                    componentName: 'Home',
+                },
+            },
+        ]
     },
     {
         path: '/mapIndex',

@@ -2,6 +2,7 @@
   <aside
     class="emulator-topology-3d-dock"
     :class="{ 'is-collapsed': collapsed }"
+    :style="{ '--emulator-topology-3d-dock-bottom': bottomOffset }"
     data-testid="emulator-topology-3d-dock"
   >
     <template v-if="collapsed">
@@ -145,6 +146,7 @@ import type {
 
 defineProps<{
   title: string
+  bottomOffset?: string
   activePage: EmulatorTopologyDockPage
   stats: EmulatorTopologyCommonStats
   asSummaries: EmulatorTopologyAsSummary[]
@@ -215,13 +217,13 @@ defineEmits<{
 .emulator-topology-3d-dock {
   position: absolute;
   right: 22px;
-  bottom: 22px;
+  bottom: var(--emulator-topology-3d-dock-bottom, 22px);
   z-index: 5;
   display: flex;
   flex-direction: column;
   gap: 14px;
   width: min(420px, calc(100vw - 44px));
-  max-height: calc(100vh - 44px);
+  max-height: calc(100vh - var(--emulator-topology-3d-dock-bottom, 22px) - 22px);
   min-height: 0;
   padding: 14px;
   overflow: hidden;

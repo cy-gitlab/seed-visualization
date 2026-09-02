@@ -204,6 +204,39 @@ traffic interfaces refreshed: interfaces=veth1234abc,veth5678def discoveredConta
 
 Refresh failures are also logged with the last known interface summary and the error.
 
+### When Docker topology changes
+
+The interface mapping is a snapshot of the Docker/emulator topology at the time discovery runs. If the emulator containers are started later, recreated, removed, or their Docker networks change, the old host veth mapping may become stale.
+
+In that situation, refresh the observer in one of these ways:
+
+1. Restart `traffic-observer-service`.
+2. Preferably, keep the service running and call the runtime refresh API:
+
+   ```bash
+   curl -X PUT http://127.0.0.1:19092/interfaces
+   ```
+
+   `POST /interfaces` is also accepted.
+
+The refresh API performs Docker-based discovery again, updates the container-to-veth mapping, and reattaches the eBPF program to the refreshed host interfaces.
+
+Important behavior:
+
+- Startup discovery runs once.
+- The observer does not continuously poll Docker API in the background.
+- A non-empty `/filter` request retries discovery only when the current attached interface set is empty.
+- If Docker API data changes while the observer already has non-empty interface data, call `/interfaces` or restart the service; do not rely on `/filter` to refresh a stale non-empty mapping.
+
+Recommended operational flow when emulator topology changes:
+
+```text
+start/recreate emulator containers
+  -> call PUT /interfaces
+  -> set or re-apply PUT /filter
+  -> observe packets over WebSocket / pcap recording
+```
+
 ## Runtime pcap / JSON recording
 
 Get recording status:
