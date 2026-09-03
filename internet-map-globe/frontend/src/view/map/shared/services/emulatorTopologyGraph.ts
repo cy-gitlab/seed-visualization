@@ -56,6 +56,7 @@ type TopologyContainer = {
 const NODE_HEIGHT = 0
 const ROUTER_OFFSET_RADIUS = 0.52
 const HOST_OFFSET_RADIUS = 0.34
+const IX_NETWORK_OFFSET_RADIUS = 0.015
 const GROUP_COLOR_PALETTE = [
   '#4aa3ff',
   '#34d399',
@@ -178,11 +179,16 @@ function getContainerLabel(node: EmulatorNode) {
 
 function getContainerType(node: EmulatorNode): TopologyContainer['type'] {
   const role = node.meta?.emulatorInfo?.role
-  return ['Router', 'BorderRouter', 'Route Server'].includes(role) ? 'router' : 'host'
+  return ['Router', 'BorderRouter'].includes(role) ? 'router' : 'host'
 }
 
 function isTransitRouterContainer(container: TopologyContainer) {
   return container.type === 'router' && /^r\d+$/i.test(container.raw.meta?.emulatorInfo?.name ?? container.label)
+}
+
+function isIxContainer(container: TopologyContainer) {
+  const info = container.raw.meta?.emulatorInfo
+  return info?.role === 'Route Server' || /^ix\d*$/i.test(String(info?.name ?? container.label))
 }
 
 function getNodeNetworkSettingsText(node: EmulatorNode) {
@@ -343,9 +349,9 @@ function resolveNetworkPoints(networks: TopologyNetwork[], containers: TopologyC
   const pointByNetworkId = new Map<string, GeoPoint>()
 
   networks
-    .filter((network) => network.type === 'ix' || network.point)
+    .filter((network) => network.point)
     .forEach((network) => {
-      pointByNetworkId.set(network.id, network.point ?? hashPoint(`network:${network.id}`))
+      pointByNetworkId.set(network.id, network.point!)
     })
 
   networks
@@ -355,6 +361,19 @@ function resolveNetworkPoints(networks: TopologyNetwork[], containers: TopologyC
         .filter((container) => container.networkIds.includes(network.id))
         .map((container) => getContainerAnchorPoint(container, pointByNetworkId))
       pointByNetworkId.set(network.id, averageGeoPoints(endpointPoints) ?? hashPoint(`network:${network.id}`))
+    })
+
+  networks
+    .filter((network) => network.type === 'ix' && !network.point)
+    .forEach((network) => {
+      const ixContainerPoints = containers
+        .filter((container) => isIxContainer(container) && container.networkIds.includes(network.id))
+        .map((container) => container.point)
+        .filter((point): point is GeoPoint => Boolean(point))
+      const anchorPoint = averageGeoPoints(ixContainerPoints)
+      if (anchorPoint) {
+        pointByNetworkId.set(network.id, offsetPoint(anchorPoint, hashString(`ix-network:${network.id}`) % 12, IX_NETWORK_OFFSET_RADIUS))
+      }
     })
 
   networks.forEach((network) => {
