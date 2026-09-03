@@ -24,6 +24,8 @@ Workflow:
 4. The page reads SEED Emulator metadata labels under `services` and `networks`.
 5. After parsing succeeds, the topology is rendered.
 
+![upload-3d-1.png](assets/upload-3d-1.png)
+
 ## Node construction rules
 
 Uploaded pages build nodes from `docker-compose.yml`:
@@ -85,6 +87,8 @@ PCAP packet N <-> JSON item N
 
 In other words, the PCAP and JSON files must remain aligned in packet order.
 
+![upload-3d-2.png](assets/upload-3d-2.png)
+
 ## Offline filter
 
 The uploaded-page filter applies only to the uploaded PCAP. It does not connect to `traffic-observer-service`.
@@ -101,6 +105,8 @@ dst host 10.151.0.71
 ```
 
 Invalid tcpdump-like expressions should produce a syntax error instead of being guessed or loosely interpreted by the frontend.
+
+![upload-3d-3.png](assets/upload-3d-3.png)
 
 ## Replay controls
 
