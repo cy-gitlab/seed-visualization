@@ -54,6 +54,7 @@ const serviceColors = ["black", "blue", "green", "red", "yellow", "orange"]
 const inputActiveName = ref('settings')
 const inputFilter = ref('')
 const inputSearch = ref('')
+const submitLoading = ref(false)
 const dialogVisible = ref(true)
 const settingActiveName = ref('settings')
 const detailsDialogVisible = ref(false)
@@ -102,12 +103,23 @@ const replayState = reactive({
 
 const onSubmitFilter = async () => {
   if (!mapUi.value) return
-  await mapUi.value?.onSubmitFilter(inputFilter.value)
-  ElMessage({
-    message: 'Submitted',
-    type: 'success',
-    duration: 1000
-  })
+  submitLoading.value = true
+  try {
+    await mapUi.value?.onSubmitFilter(inputFilter.value)
+    ElMessage({
+      message: 'Submitted',
+      type: 'success',
+      duration: 1000
+    })
+  } catch (error) {
+    ElMessage({
+      message: 'Submitted failed',
+      type: 'error',
+      duration: 1000
+    })
+  } finally {
+    submitLoading.value = false
+  }
 }
 const onSubmitSearch = () => {
   if (!mapUi.value) return
@@ -402,7 +414,15 @@ defineExpose({mapUi})
             @click="filterClick"
         >
           <template #prepend>
-            <el-button data-testid="base-map-filter-submit" type="primary" class="submit" @click="onSubmitFilter">Submit</el-button>
+            <el-button
+                :loading="submitLoading"
+                data-testid="base-map-filter-submit"
+                type="primary"
+                class="submit"
+                @click="onSubmitFilter"
+            >
+              <template v-if="!submitLoading">Submit</template>
+            </el-button>
           </template>
         </el-input>
       </el-tab-pane>

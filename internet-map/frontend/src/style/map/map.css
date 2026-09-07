@@ -267,7 +267,29 @@ label {
     .submit {
         background: rgb(203 216 235);
         color: blue;
+        width: 72px;
         border-top-right-radius: 0;
         border-bottom-right-radius: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+        position: relative;
+    }
+
+    .submit.is-loading {
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    .submit.is-loading .el-icon {
+        margin-right: 0;
+        margin-left: 0;
+        position: absolute;
+        inset: 0;
+        width: 1em;
+        height: 1em;
+        margin: auto;
+        color: blue;
     }
 }
