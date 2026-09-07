@@ -35,19 +35,34 @@
       {{ filterError || filterStatusText }}
     </small>
 
-    <el-tooltip
-      content="Only render links that belong to the current live or replayed packet path.<br/>This keeps large topologies readable while capturing."
-      placement="top"
-      :show-after="200"
-      raw-content
-    >
-      <el-checkbox
-        class="emulator-traffic-path-link-toggle"
-        v-model="showOnlyPacketLinks"
+    <div class="emulator-traffic-toggle-row">
+      <el-tooltip
+        content="Only render links that belong to the current live or replayed packet path.<br/>This keeps large topologies readable while capturing."
+        placement="top"
+        :show-after="200"
+        raw-content
       >
-        Packet path links only
-      </el-checkbox>
-    </el-tooltip>
+        <el-checkbox
+          class="emulator-traffic-path-link-toggle"
+          v-model="showOnlyPacketLinks"
+        >
+          Packet path links only
+        </el-checkbox>
+      </el-tooltip>
+      <el-tooltip
+        content="Enable packet flow animation and path analysis.<br/>When disabled, live packets only flash captured nodes and networks."
+        placement="top"
+        :show-after="200"
+        raw-content
+      >
+        <el-checkbox
+          class="emulator-traffic-path-link-toggle"
+          v-model="flowAnimationEnabled"
+        >
+          Flow animation
+        </el-checkbox>
+      </el-tooltip>
+    </div>
 
     <label class="emulator-traffic-replay-number">
       <span class="emulator-traffic-field-title">
@@ -248,6 +263,7 @@ const playbackIntervalMs = defineModel<number>('playbackIntervalMs', { required:
 const timelineWindowMs = defineModel<number>('timelineWindowMs', { required: true })
 const timelineSpeed = defineModel<number>('timelineSpeed', { required: true })
 const showOnlyPacketLinks = defineModel<boolean>('showOnlyPacketLinks', { required: true })
+const flowAnimationEnabled = defineModel<boolean>('flowAnimationEnabled', { required: true })
 
 const emit = defineEmits<{
   submitFilter: []

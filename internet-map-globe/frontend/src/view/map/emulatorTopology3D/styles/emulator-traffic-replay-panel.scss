@@ -178,6 +178,13 @@
   }
 }
 
+.emulator-traffic-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .emulator-traffic-replay-number {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 128px;

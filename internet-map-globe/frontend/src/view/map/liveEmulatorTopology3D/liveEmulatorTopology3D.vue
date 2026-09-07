@@ -70,6 +70,7 @@ const packetReplayTimelineCursorMs = ref<number>()
 const packetReplayStatus = ref('Submit a filter, then record live packets for replay.')
 const packetRecordingEnabled = ref(false)
 const showOnlyPacketLinks = ref(false)
+const flowAnimationEnabled = ref(false)
 const globeRef = ref<InstanceType<typeof Map3DGlobe>>()
 const topologyLoadError = ref('')
 const trafficFilterInput = ref('')
@@ -354,9 +355,11 @@ function handleLivePacket(packet: EmulatorTopologyPacketReplayEvent) {
   if (flowKey) {
     liveFlowLastSeenAtMs.set(flowKey, now)
   }
-  pruneStaleLiveFlows(now)
+  if (flowAnimationEnabled.value) {
+    pruneStaleLiveFlows(now)
+  }
 
-  const livePathChanged = shouldSkipLivePacketAnimation(remappedPacket)
+  const livePathChanged = !flowAnimationEnabled.value || shouldSkipLivePacketAnimation(remappedPacket)
     ? false
     : updateLiveFlowPathIfNeeded(remappedPacket)
 
@@ -368,11 +371,13 @@ function handleLivePacket(packet: EmulatorTopologyPacketReplayEvent) {
     packetReplayIndex.value = packetReplayTimingMode.value === 'timeline'
       ? packetReplayEvents.value.length
       : packetReplayPlaylist.value.length || packetReplayEvents.value.length
-    packetReplayStatus.value =
-      `Recording live flow: ${packetReplayFlowPath.value.length.toLocaleString()} flow steps from ${packetReplayEvents.value.length.toLocaleString()} packets.`
+    packetReplayStatus.value = flowAnimationEnabled.value
+      ? `Recording live flow: ${packetReplayFlowPath.value.length.toLocaleString()} flow steps from ${packetReplayEvents.value.length.toLocaleString()} packets.`
+      : `Recording live packets: ${packetReplayEvents.value.length.toLocaleString()} captured.`
   } else {
-    packetReplayStatus.value =
-      `Live capture active. Click record to save packets for replay. Current live flow has ${liveFlowPath.value.length.toLocaleString()} steps.`
+    packetReplayStatus.value = flowAnimationEnabled.value
+      ? `Live capture active. Click record to save packets for replay. Current live flow has ${liveFlowPath.value.length.toLocaleString()} steps.`
+      : 'Live capture active. Click record to save packets for replay.'
   }
 
   playLivePacketAnimation(remappedPacket)
@@ -630,6 +635,11 @@ function playPacketReplayWindow(events: EmulatorTopologyPacketReplayEvent[], sta
 function playLivePacketAnimation(event: EmulatorTopologyPacketReplayEvent) {
   if (shouldSkipLivePacketAnimation(event)) return
 
+  if (!flowAnimationEnabled.value) {
+    enqueueLivePacketAnimation(event, getCapturedPacketNodePath(event), 'highlight')
+    return
+  }
+
   const completePath = getCompleteLiveFlowPathForPacket(event)
   if (!completePath.length) {
     enqueueLivePacketAnimation(event, getCapturedPacketNodePath(event), 'highlight')
@@ -866,6 +876,11 @@ function playPacketReplayPacketAtIndex(packetIndex: number) {
   const event = packetReplayEvents.value[packetIndex]
   if (!event) return
 
+  if (!flowAnimationEnabled.value) {
+    flashPacketReplayEventNodes(event, packetIndex)
+    return
+  }
+
   const eventSteps = packetReplayPathSteps.value.filter((step) => step.event === event)
   if (eventSteps.length > 0) {
     playPacketReplaySteps(eventSteps, packetIndex)
@@ -928,6 +943,15 @@ function getPacketDirectPath(event: EmulatorTopologyPacketReplayEvent) {
     resolveGraphNodeId(event.networkId, event.networkName, event.networkLabel),
     resolveGraphNodeId(event.destContainerId, event.destContainerName, event.destNodeName, event.destNodeIp),
   ].filter(Boolean) as string[])
+}
+
+function flashPacketReplayEventNodes(event: EmulatorTopologyPacketReplayEvent, packetIndex: number) {
+  const nodeIds = getPacketDirectPath(event)
+  if (!nodeIds.length) return
+  globeRef.value?.flashNodes(
+    nodeIds,
+    Math.min(1200, Math.max(16, getCurrentReplayVisualDurationMs(packetIndex + 1) * 0.65)),
+  )
 }
 
 function uniquePathNodes(nodeIds: string[]) {
@@ -1044,6 +1068,11 @@ function rebuildPacketReplayFlow(events: EmulatorTopologyPacketReplayEvent[]) {
 }
 
 function ensurePacketReplayPlaylist() {
+  if (!flowAnimationEnabled.value) {
+    packetReplayPlaylist.value = packetReplayEvents.value
+    return packetReplayPlaylist.value
+  }
+
   if (!packetReplayPlaylist.value.length) {
     rebuildPacketReplayFlow(packetReplayEvents.value)
   }
@@ -1220,6 +1249,19 @@ watch(showOnlyPacketLinks, () => {
   refreshDisplayGraph()
 })
 
+watch(flowAnimationEnabled, (enabled) => {
+  resetLiveFlowState()
+  clearLivePacketAnimationQueues()
+  if (enabled && packetReplayEvents.value.length > 0) {
+    rebuildPacketReplayFlow(packetReplayEvents.value)
+  } else {
+    packetReplayFlowPath.value = []
+    packetReplayFlowSegments.value = []
+    packetReplayPathSteps.value = []
+  }
+  refreshDisplayGraph()
+})
+
 watch(
   () => visibleTypes.value.router,
   (routerVisible) => {
@@ -1310,6 +1352,7 @@ onMounted(async () => {
       v-model:traffic-timeline-window-ms="packetReplayTimelineWindowMs"
       v-model:traffic-timeline-speed="packetReplayTimelineSpeed"
       v-model:traffic-show-only-packet-links="showOnlyPacketLinks"
+      v-model:traffic-flow-animation-enabled="flowAnimationEnabled"
       v-model:traffic-seek-position="packetReplayProgress"
       :traffic-filter-submitting="trafficFilterSubmitting"
       :traffic-filter-error="trafficFilterError"

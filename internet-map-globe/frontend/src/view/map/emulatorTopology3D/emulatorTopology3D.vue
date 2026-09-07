@@ -63,6 +63,7 @@ const packetReplayStatus = ref('Import saved collector JSON or pcap files.')
 const packetReplayError = ref('')
 const packetRecordingEnabled = ref(false)
 const showOnlyPacketLinks = ref(false)
+const flowAnimationEnabled = ref(false)
 const globeRef = ref<InstanceType<typeof Map3DGlobe>>()
 const trafficFilterInput = ref('')
 const trafficFilterStatus = ref('Live capture is unavailable for uploaded docker-compose topology data.')
@@ -184,7 +185,7 @@ async function handlePacketReplayFileChange(event: Event) {
     packetReplayJsonEvents.value = result.jsonEvents
     packetReplayPcapPackets.value = result.pcapPackets
     packetReplayEvents.value = result.events
-    rebuildPacketReplayFlow(packetReplayEvents.value)
+    rebuildPacketReplayFlowIfEnabled()
     packetReplayIndex.value = 0
     packetReplayFileName.value = pcapFile ? `${jsonFile.name} + ${pcapFile.name}` : jsonFile.name
     packetReplayStatus.value =
@@ -459,6 +460,11 @@ function playPacketReplayPacket(position: number) {
 
 function playPacketReplayPacketAtIndex(packetIndex: number) {
   const event = packetReplayEvents.value[packetIndex]
+  if (!flowAnimationEnabled.value) {
+    if (event) flashPacketReplayEventNodes(event, packetIndex)
+    return
+  }
+
   const directPath = event ? getPacketDirectPath(event) : []
   if (event && directPath.length > 0) {
     playPacketDirectPath(event, directPath, packetIndex)
@@ -553,6 +559,29 @@ function rebuildPacketReplayFlow(events: EmulatorTopologyPacketReplayEvent[]) {
   refreshDisplayGraph()
 }
 
+function rebuildPacketReplayFlowIfEnabled() {
+  if (!flowAnimationEnabled.value) {
+    packetReplayPlaylist.value = packetReplayEvents.value
+    packetReplayFlowPath.value = []
+    packetReplayFlowSegments.value = []
+    packetReplayPathSteps.value = []
+    packetReplayEventPathIndexes.value = []
+    refreshDisplayGraph()
+    return
+  }
+
+  rebuildPacketReplayFlow(packetReplayEvents.value)
+}
+
+function flashPacketReplayEventNodes(event: EmulatorTopologyPacketReplayEvent, packetIndex: number) {
+  const nodeIds = getPacketDirectPath(event)
+  if (!nodeIds.length) return
+  globeRef.value?.flashNodes(
+    nodeIds,
+    Math.min(1200, Math.max(16, getCurrentPacketVisualDurationMs(packetIndex) * 0.65)),
+  )
+}
+
 function buildPacketEventPathIndexes(
   events: EmulatorTopologyPacketReplayEvent[],
   pathEvents: EmulatorTopologyPacketReplayEvent[],
@@ -578,8 +607,8 @@ function buildPacketEventPathIndexes(
 
 function ensurePacketReplayEvents() {
   if (!packetReplayEvents.value.length) return []
-  if (!packetReplayFlowPath.value.length) {
-    rebuildPacketReplayFlow(packetReplayEvents.value)
+  if (flowAnimationEnabled.value && !packetReplayFlowPath.value.length) {
+    rebuildPacketReplayFlowIfEnabled()
   }
 
   return packetReplayEvents.value
@@ -711,7 +740,7 @@ async function submitTrafficFilter() {
         },
       )
       packetReplayEvents.value = result.events
-      rebuildPacketReplayFlow(packetReplayEvents.value)
+      rebuildPacketReplayFlowIfEnabled()
       packetReplayIndex.value = 0
       trafficFilterStatus.value = trafficFilterInput.value.trim()
         ? `Offline filter matched ${result.events.length.toLocaleString()} JSON packets from ${result.matchedPacketCount.toLocaleString()} PCAP packets.`
@@ -748,6 +777,20 @@ watch(
 
 watch(showOnlyPacketLinks, () => {
   refreshDisplayGraph()
+})
+
+watch(flowAnimationEnabled, (enabled) => {
+  stopPacketReplay()
+  if (enabled && packetReplayEvents.value.length > 0) {
+    rebuildPacketReplayFlow(packetReplayEvents.value)
+  } else {
+    packetReplayPlaylist.value = packetReplayEvents.value
+    packetReplayFlowPath.value = []
+    packetReplayFlowSegments.value = []
+    packetReplayPathSteps.value = []
+    packetReplayEventPathIndexes.value = []
+    refreshDisplayGraph()
+  }
 })
 
 watch(
@@ -828,6 +871,7 @@ onMounted(() => {
       v-model:traffic-timeline-window-ms="packetReplayTimelineWindowMs"
       v-model:traffic-timeline-speed="packetReplayTimelineSpeed"
       v-model:traffic-show-only-packet-links="showOnlyPacketLinks"
+      v-model:traffic-flow-animation-enabled="flowAnimationEnabled"
       v-model:traffic-seek-position="packetReplayProgress"
       :traffic-filter-submitting="trafficFilterSubmitting"
       :traffic-filter-error="trafficFilterError"

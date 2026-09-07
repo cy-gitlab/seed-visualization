@@ -37,6 +37,8 @@
       dockerfile: Dockerfile
     depends_on:
       - seedemu_emulator_service
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8090:80"
     networks:

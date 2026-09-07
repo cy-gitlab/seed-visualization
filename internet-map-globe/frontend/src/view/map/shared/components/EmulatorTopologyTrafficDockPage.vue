@@ -17,6 +17,7 @@
       v-model:timeline-window-ms="timelineWindowMs"
       v-model:timeline-speed="timelineSpeed"
       v-model:show-only-packet-links="showOnlyPacketLinks"
+      v-model:flow-animation-enabled="flowAnimationEnabled"
       :filter-submitting="filterSubmitting"
       :filter-error="filterError"
       :filter-status-text="filterStatusText"
@@ -53,6 +54,7 @@
       v-model:timeline-window-ms="timelineWindowMs"
       v-model:timeline-speed="timelineSpeed"
       v-model:show-only-packet-links="showOnlyPacketLinks"
+      v-model:flow-animation-enabled="flowAnimationEnabled"
       :filter-submitting="filterSubmitting"
       :filter-error="filterError"
       :filter-status-text="filterStatusText"
@@ -117,6 +119,7 @@ const playbackIntervalMs = defineModel<number>('playbackIntervalMs', { required:
 const timelineWindowMs = defineModel<number>('timelineWindowMs', { required: true })
 const timelineSpeed = defineModel<number>('timelineSpeed', { required: true })
 const showOnlyPacketLinks = defineModel<boolean>('showOnlyPacketLinks', { required: true })
+const flowAnimationEnabled = defineModel<boolean>('flowAnimationEnabled', { required: true })
 
 defineEmits<{
   packetFileChange: [event: Event]

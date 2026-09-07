@@ -72,6 +72,7 @@
         v-model:timeline-window-ms="trafficTimelineWindowMs"
         v-model:timeline-speed="trafficTimelineSpeed"
         v-model:show-only-packet-links="trafficShowOnlyPacketLinks"
+        v-model:flow-animation-enabled="trafficFlowAnimationEnabled"
         :traffic-mode="trafficMode"
         :filter-submitting="trafficFilterSubmitting"
         :filter-error="trafficFilterError"
@@ -190,6 +191,7 @@ const trafficPlaybackIntervalMs = defineModel<number>('trafficPlaybackIntervalMs
 const trafficTimelineWindowMs = defineModel<number>('trafficTimelineWindowMs', { required: true })
 const trafficTimelineSpeed = defineModel<number>('trafficTimelineSpeed', { required: true })
 const trafficShowOnlyPacketLinks = defineModel<boolean>('trafficShowOnlyPacketLinks', { required: true })
+const trafficFlowAnimationEnabled = defineModel<boolean>('trafficFlowAnimationEnabled', { required: true })
 const trafficSeekPosition = defineModel<number>('trafficSeekPosition', { required: true })
 const collapsed = ref(false)
 
