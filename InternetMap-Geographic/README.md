@@ -46,13 +46,13 @@ Live topology is intended for observing a running experiment. Uploaded topology 
 Start the basic services from the repository root:
 
 ```bash
-docker compose up --build seedemu_emulator_service seedemu_internet_map_globe
+docker compose up --build seedemu_emulator_service seedemu_internet_map_geographic
 ```
 
 To enable live traffic replay, also start the traffic observer:
 
 ```bash
-docker compose up --build seedemu_emulator_service seedemu_internet_map_globe seedmu_traffic_observer_service
+docker compose up --build seedemu_emulator_service seedemu_internet_map_geographic seedmu_traffic_observer_service
 ```
 
 Open:
@@ -64,7 +64,7 @@ http://localhost:8090/pro/map/3d
 ## Local development
 
 ```bash
-cd internet-map-globe/frontend
+cd InternetMap-Geographic/frontend
 pnpm install
 pnpm dev
 ```

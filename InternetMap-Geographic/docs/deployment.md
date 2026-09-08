@@ -7,17 +7,17 @@ This document describes how to start `internet-map-globe` with Docker Compose, h
 In the repository-level `docker-compose.yml`, the service key for `internet-map-globe` is:
 
 ```text
-seedemu_internet_map_globe
+seedemu_internet_map_geographic
 ```
 
 Default configuration:
 
 ```yaml
-seedemu_internet_map_globe:
-  container_name: seedemu_internet_map_globe
-  image: handsonsecurity/seedemu-internet-map-globe:3.0
+seedemu_internet_map_geographic:
+  container_name: seedemu_internet_map_geographic
+  image: handsonsecurity/seedemu-internet-map-geographic:1.0
   build:
-    context: internet-map-globe
+    context: InternetMap-Geographic
     dockerfile: Dockerfile
   depends_on:
     - seedemu_emulator_service
@@ -30,13 +30,13 @@ seedemu_internet_map_globe:
 ### Topology viewing only
 
 ```bash
-docker compose up --build seedemu_emulator_service seedemu_internet_map_globe
+docker compose up --build seedemu_emulator_service seedemu_internet_map_geographic
 ```
 
 ### Topology viewing with live packet capture
 
 ```bash
-docker compose up --build seedemu_emulator_service seedemu_internet_map_globe seedmu_traffic_observer_service
+docker compose up --build seedemu_emulator_service seedemu_internet_map_geographic seedmu_traffic_observer_service
 ```
 
 ### Full visualization stack
@@ -58,7 +58,7 @@ docker compose up --build
 ## Local development
 
 ```bash
-cd internet-map-globe/frontend
+cd InternetMap-Geographic/frontend
 pnpm install
 pnpm dev
 ```
@@ -89,7 +89,7 @@ http://localhost:5174/dev/map/3d
 
 ## Nginx
 
-The production image serves static assets and proxies API traffic through `internet-map-globe/nginx.conf`.
+The production image serves static assets and proxies API traffic through `InternetMap-Geographic/nginx.conf`.
 
 Common proxy relationships:
 

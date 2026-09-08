@@ -1,6 +1,6 @@
 ﻿# internet-map 测试覆盖文档
 
-本文档描述 `internet-map/frontend` 当前测试用例覆盖的模块、页面和测试函数。
+本文档描述 `InternetMap-Toplogy/frontend` 当前测试用例覆盖的模块、页面和测试函数。
 
 ## 测试入口
 
@@ -65,4 +65,3 @@ flowchart TB
 | `tests/e2e/map-pages.spec.ts` | IX Map page | `IXMap page opens settings and exposes IX controls` |
 | `tests/e2e/map-pages.spec.ts` | Transit Map page | `TransitMap page opens settings and exposes transit controls` |
 | `tests/e2e/map-pages.spec.ts` | Upload Map page | `UploadMap page renders upload panel and shared map controls` |
-

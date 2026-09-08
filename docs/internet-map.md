@@ -4,9 +4,9 @@
 
 ## 当前结构
 
-- 目录：`internet-map/`
-- 前端：`internet-map/frontend/`
-- 容器名：`internet-map`
+- 目录：`InternetMap-Toplogy/`
+- 前端：`InternetMap-Toplogy/frontend/`
+- 容器名：`seedemu_internet_map_toplogy`
 
 ## 调用关系
 

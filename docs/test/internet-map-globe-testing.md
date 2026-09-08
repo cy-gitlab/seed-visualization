@@ -1,8 +1,8 @@
 # internet-map-globe 测试覆盖文档
 
-本文档描述 `internet-map-globe/frontend` 当前测试用例覆盖的模块、页面和测试函数。
+本文档描述 `InternetMap-Geographic/frontend` 当前测试用例覆盖的模块、页面和测试函数。
 
-> 当前 Windows 工作区中的目录可能仍显示为 `internet-map-globe`；CI 和文档按目标目录名 `internet-map-globe` 描述。
+> 当前 Windows 工作区中的目录为 `InternetMap-Geographic`；CI 和文档中的 Docker Compose 服务名使用 `seedemu_internet_map_geographic`。
 
 ## 测试入口
 

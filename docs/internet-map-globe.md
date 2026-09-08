@@ -7,7 +7,7 @@
 - `/map/3d`: live 3D emulator topology page backed by `liveEmulatorTopology3D.vue` and Docker API data through `emulator-service`.
 - `/map/2d`: live 2D emulator topology page backed by `liveEmulatorTopology2D.vue` and Docker API data through `emulator-service`.
 
-The Docker Compose service name is `seedemu_internet_map_globe`. The default published port is `8090:80`.
+The Docker Compose service name is `seedemu_internet_map_geographic`. The default published port is `8090:80`.
 
 ## Runtime relationships
 
@@ -615,7 +615,7 @@ The emulator topology replay panels support two mutually exclusive timing modes.
 
 ## Environment variables
 
-The frontend reads environment files from `internet-map-globe/frontend/env`.
+The frontend reads environment files from `InternetMap-Geographic/frontend/env`.
 
 | Variable | Used by | Description |
 | --- | --- | --- |
@@ -635,9 +635,9 @@ Production normally relies on Nginx routing with `VITE_TRAFFIC_OBSERVER_URL_PREF
 
 Important files:
 
-- `internet-map-globe/Dockerfile`
-- `internet-map-globe/nginx.conf`
-- `internet-map-globe/entrypoint.sh`
+- `InternetMap-Geographic/Dockerfile`
+- `InternetMap-Geographic/nginx.conf`
+- `InternetMap-Geographic/entrypoint.sh`
 
 The container serves the built frontend through Nginx. In the root Docker Compose configuration, it should be exposed as:
 

@@ -15,6 +15,19 @@ html, body, .map-area, .map {
     line-height: initial;
 }
 
+.map-empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    color: #7f8c9a;
+    font-size: 16px;
+    text-align: center;
+    background: #f7f9fc;
+}
+
 .clickable {
     cursor: pointer;
 }
