@@ -78,8 +78,8 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import EmulatorTrafficReplayPanel from '../../emulatorTopology3D/components/EmulatorTrafficReplayPanel.vue'
-import LiveTrafficReplayPanel from '../../liveEmulatorTopology3D/components/LiveTrafficReplayPanel.vue'
+import EmulatorTrafficReplayPanel from './traffic/EmulatorTrafficReplayPanel.vue'
+import LiveTrafficReplayPanel from './traffic/LiveTrafficReplayPanel.vue'
 
 withDefaults(defineProps<{
   trafficMode: 'offline' | 'live'

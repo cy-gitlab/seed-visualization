@@ -57,7 +57,7 @@ import upload3D from '@/assets/img/upload-3d.png'
             >
               <el-card>
                 <template #header>
-                  <h3>EMULATOR TOPOLOGY 2D</h3>
+                  <h3>EMULATOR TOPOLOGY 3D</h3>
                 </template>
                 <el-image :src="upload3D" :fit="'fit'"/>
               </el-card>

@@ -3,7 +3,7 @@
     <header>
       <span>Packet Playback</span>
       <el-tooltip
-        content="Live capture uses the traffic observer filter.<br/>Captured packets can be recorded and replayed in this page."
+        content="Import saved collector JSON or pcap files<br/>for offline packet playback."
         placement="top"
         :show-after="200"
         raw-content
@@ -17,27 +17,76 @@
         v-model="filterInput"
         size="small"
         placeholder="tcpdump-like filter, e.g. icmp"
-        :disabled="filterSubmitting"
+        :disabled="filterControlsDisabled"
         clearable
         @keyup.enter="$emit('submitFilter')"
       />
-      <el-button
-        size="small"
-        type="primary"
-        :loading="filterSubmitting"
-        :disabled="filterSubmitting"
-        @click="$emit('submitFilter')"
+      <el-tooltip
+        :disabled="!filterControlsDisabledReason"
+        :content="filterControlsDisabledReason"
+        placement="top"
+        raw-content
       >
-        Apply
-      </el-button>
+        <span class="emulator-traffic-filter-action-wrap">
+          <el-button
+            size="small"
+            type="primary"
+            :loading="filterSubmitting"
+            :disabled="filterControlsDisabled"
+            @click="$emit('submitFilter')"
+          >
+            Apply
+          </el-button>
+        </span>
+      </el-tooltip>
     </div>
     <small class="emulator-traffic-filter-status" :class="{ error: Boolean(filterError) }">
       {{ filterError || filterStatusText }}
     </small>
 
+    <div
+      class="emulator-traffic-import-card"
+      :class="{ error: Boolean(importError), disabled: importCardDisabled }"
+      role="button"
+      :aria-disabled="importCardDisabled"
+      :tabindex="importCardDisabled ? -1 : 0"
+      @click="openImport"
+      @keydown.enter.prevent="openImport"
+      @keydown.space.prevent="openImport"
+    >
+      <span class="emulator-traffic-import-icon">
+        <el-icon :class="{ 'is-loading': importBusy }">
+          <WarningFilled v-if="importError" />
+          <Loading v-else-if="importBusy" />
+          <Document v-else-if="importedFileName" />
+          <UploadFilled v-else />
+        </el-icon>
+      </span>
+      <span class="emulator-traffic-import-copy">
+        <span class="emulator-traffic-import-title">
+          <strong>{{ importedFileName || 'Import capture file' }}</strong>
+          <el-tooltip
+            content="Import collector JSON or pcap files<br/>and map packets to current emulator nodes."
+            placement="top"
+            :show-after="200"
+            raw-content
+          >
+            <el-icon class="emulator-traffic-import-help">
+              <InfoFilled />
+            </el-icon>
+          </el-tooltip>
+        </span>
+        <small>{{ compactImportStatusText }}</small>
+      </span>
+    </div>
+
+    <small class="emulator-traffic-import-status" :class="{ error: Boolean(importError) }">
+      {{ importError || compactImportStatusText }}
+    </small>
+
     <div class="emulator-traffic-toggle-row">
       <el-tooltip
-        content="Only render links that belong to the current live or replayed packet path.<br/>This keeps large topologies readable while capturing."
+        content="Only render links that belong to the current packet path.<br/>This is useful for large topologies."
         placement="top"
         :show-after="200"
         raw-content
@@ -50,7 +99,7 @@
         </el-checkbox>
       </el-tooltip>
       <el-tooltip
-        content="Enable packet flow animation and path analysis.<br/>When disabled, live packets only flash captured nodes and networks."
+        content="Enable packet flow animation and path analysis.<br/>When disabled, replayed packets only flash related nodes."
         placement="top"
         :show-after="200"
         raw-content
@@ -135,24 +184,18 @@
     </template>
 
     <div class="emulator-traffic-replay-controls">
-      <el-tooltip
-        :content="recordingEnabled ? 'Stop recording packets' : 'Record packets'"
-        placement="top"
-        :show-after="160"
-        popper-class="emulator-traffic-control-tooltip"
+      <button
+        type="button"
+        class="emulator-traffic-icon-button record"
+        :class="{ active: recordingEnabled }"
+        :disabled="recordButtonDisabled"
+        :data-tooltip="recordButtonTooltip"
+        @click="$emit('toggleRecording')"
       >
-        <button
-          type="button"
-          class="emulator-traffic-icon-button record"
-          :class="{ active: recordingEnabled }"
-          :disabled="!captureActive || playbackEnabled"
-          @click="$emit('toggleRecording')"
-        >
-          <el-icon>
-            <component :is="recordingEnabled ? CircleCloseFilled : VideoCameraFilled" />
-          </el-icon>
-        </button>
-      </el-tooltip>
+        <el-icon>
+          <component :is="recordingEnabled ? CircleCloseFilled : VideoCameraFilled" />
+        </el-icon>
+      </button>
       <button
         type="button"
         class="emulator-traffic-icon-button"
@@ -237,11 +280,16 @@ import {
   Back,
   CircleCloseFilled,
   Delete,
+  Document,
+  InfoFilled,
+  Loading,
   Right,
   SwitchButton,
+  UploadFilled,
   VideoCameraFilled,
   VideoPause,
   VideoPlay,
+  WarningFilled,
 } from '@element-plus/icons-vue'
 import { computed } from 'vue'
 
@@ -250,11 +298,20 @@ const props = defineProps<{
   filterError: string
   filterStatusText: string
   captureActive: boolean
+  captureDisabled?: boolean
+  captureDisabledText?: string
+  offlineFilterEnabled?: boolean
+  offlineFilterDisabledText?: string
+  importBusy?: boolean
+  importActive: boolean
   recordingEnabled: boolean
   packetCount: number
   seekPosition: number
   playbackEnabled: boolean
   playbackPaused: boolean
+  importedFileName: string
+  importStatusText: string
+  importError: string
 }>()
 
 const filterInput = defineModel<string>('filterInput', { required: true })
@@ -266,6 +323,7 @@ const showOnlyPacketLinks = defineModel<boolean>('showOnlyPacketLinks', { requir
 const flowAnimationEnabled = defineModel<boolean>('flowAnimationEnabled', { required: true })
 
 const emit = defineEmits<{
+  openImport: []
   submitFilter: []
   toggleRecording: []
   togglePlayback: []
@@ -276,23 +334,51 @@ const emit = defineEmits<{
   updateSeekPosition: [position: number]
 }>()
 
-const rangeLabel = computed(() => {
-  if (props.recordingEnabled) {
-    return `Recording live packets: ${props.packetCount.toLocaleString()} captured.`
-  }
-  if (!props.packetCount) return 'No replay packets.'
-  return `Ready to replay ${props.packetCount.toLocaleString()} flow steps.`
-})
+const compactImportStatusText = computed(() => props.importStatusText || 'Click to select .json or .pcap')
 const playbackTimingHelp = [
   '<strong>Interval</strong>: plays packets one by one in timestamp order, using a fixed event interval.',
   '<strong>Timeline, window &gt; 0</strong>: groups packets by time windows and plays packets inside each window in parallel.',
   '<strong>Timeline, window = 0</strong>: disables grouping and plays packets one by one using real packet time gaps divided by Timeline speed.',
 ].join('<br/>')
+const importCardDisabled = computed(() => props.captureActive || Boolean(props.importBusy))
+const captureUnavailableText = computed(
+  () => props.captureDisabledText || 'Live capture is unavailable<br/>when topology data comes from an uploaded docker-compose file.',
+)
+const filterControlsDisabledReason = computed(() => {
+  if (props.offlineFilterEnabled) return ''
+  if (props.offlineFilterDisabledText) return props.offlineFilterDisabledText
+  if (props.captureDisabled) return captureUnavailableText.value
+  if (props.importActive) return 'Clear the imported replay file<br/>before applying a capture filter.'
+  return ''
+})
+const filterControlsDisabled = computed(
+  () => props.filterSubmitting || (!props.offlineFilterEnabled && (props.captureDisabled || props.importActive)),
+)
+const recordButtonDisabled = computed(
+  () => props.captureDisabled || !props.captureActive || props.importActive || props.playbackEnabled,
+)
+const recordButtonTooltip = computed(() => {
+  if (props.captureDisabled) return 'Live capture is unavailable for uploaded topology data'
+  if (props.importActive) return 'Clear imported packets before recording live packets'
+  if (!props.captureActive) return 'Apply a live capture filter before recording packets'
+  return props.recordingEnabled ? 'Stop recording packets' : 'Record packets'
+})
+const rangeLabel = computed(() => {
+  if (props.recordingEnabled) {
+    return `Recording live packets: ${props.packetCount.toLocaleString()} captured.`
+  }
+  if (!props.packetCount) return 'No replay packets.'
+  return `Ready to replay ${props.packetCount.toLocaleString()} packets.`
+})
 
 function formatSeekTooltip(value: number) {
   return `${value}/${props.packetCount}`
 }
 
+function openImport() {
+  if (importCardDisabled.value) return
+  emit('openImport')
+}
 </script>
 
-<style scoped lang="scss" src="../styles/emulator-traffic-replay-panel.scss"></style>
+<style scoped lang="scss" src="../../styles/emulator-traffic-replay-panel.scss"></style>
