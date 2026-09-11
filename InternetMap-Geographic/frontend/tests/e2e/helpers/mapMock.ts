@@ -40,11 +40,11 @@ export async function mockInternetMapBackends(page: Page) {
 
   await page.route('**/api/v1/container', (route) => route.fulfill({ json: mapContainersResponse }));
   await page.route('**/api/v1/network', (route) => route.fulfill({ json: mapNetworksResponse }));
-  await page.route('**/api/v1/sniff', (route) => {
+  await page.route('**/traffic-observer/filter', (route) => {
     if (route.request().method() === 'GET') {
-      return route.fulfill({ json: { ok: true, result: { currentFilter: '' } } });
+      return route.fulfill({ json: { filter: '' } });
     }
-    return route.fulfill({ json: { ok: true, result: { currentFilter: 'icmp' } } });
+    return route.fulfill({ json: { filter: route.request().postDataJSON().filter } });
   });
   await page.route('**/api/v1/container/*/bgp', (route) => route.fulfill({ json: { ok: true, result: [] } }));
   await page.route('**/api/v1/container/*/net', (route) => route.fulfill({ json: { ok: true, result: true } }));

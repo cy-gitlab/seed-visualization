@@ -98,7 +98,7 @@ Environment files are located under `frontend/env`.
 - [Console and basic pages](docs/basic-pages.md)
 - [Deployment and environment variables](docs/deployment.md)
 
-Code architecture, component topology, module call flow, and service/API call relationships are maintained in the repository-level [docs/internet-map-globe.md](../docs/internet-map-globe.md).
+Code architecture, component topology, module call flow, and service/API call relationships are maintained in the repository-level [docs/internet-map-geographic.md](../docs/internet-map-geographic.md).
 
 ## Security notes
 

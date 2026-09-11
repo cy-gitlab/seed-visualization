@@ -1,6 +1,6 @@
-﻿# satellite-emulator
+# InternetMap-Satellite
 
-`satellite-emulator` 现在只负责 Satellite 前端和 Nginx 代理。
+`InternetMap-Satellite` 现在只负责 Satellite 前端和 Nginx 代理。
 
 ## 职责
 
@@ -62,4 +62,4 @@ flowchart LR
 
 ## 测试覆盖
 
-Mermaid 测试覆盖图见 [satellite-emulator-testing.md](./test/satellite-emulator-testing.md)。
+Mermaid 测试覆盖图见 [internet-map-satellite-testing.md](./test/internet-map-satellite-testing.md)。

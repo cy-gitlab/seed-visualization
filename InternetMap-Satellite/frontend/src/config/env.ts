@@ -25,7 +25,7 @@ const apiPrefix = metaEnv.VITE_SERVER_URL_PREFIX ?? '/api/v1';
 const emulatorApiPrefix = metaEnv.VITE_SERVER_EMULATOR_URL_PREFIX ?? '/emulator/api/v1';
 
 export const appConfig = {
-  title: metaEnv.VITE_FRONTEND_TITLE ?? 'Starlink Satellite 3D Globe Simulation',
+  title: 'InternetMap Satellite',
   baseUrl: metaEnv.VITE_FRONTEND_URL_PREFIX ?? metaEnv.BASE_URL,
   api: {
     baseUrl: apiBaseUrl,

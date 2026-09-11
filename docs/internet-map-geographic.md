@@ -1,6 +1,6 @@
-# internet-map-globe
+# InternetMap-Geographic
 
-`internet-map-globe` is the standalone Cesium emulator topology frontend. This document focuses on the live and file-based emulator topology pages:
+`InternetMap-Geographic` is the standalone Cesium emulator topology frontend. This document focuses on the live and file-based emulator topology pages:
 
 - `/upload/3d`: file-based 3D emulator topology page backed by `emulatorTopology3D.vue`.
 - `/upload/2d`: file-based 2D emulator topology page backed by `emulatorTopology2D.vue`.
@@ -14,7 +14,7 @@ The Docker Compose service name is `seedemu_internet_map_geographic`. The defaul
 ```mermaid
 %%{init: {"flowchart": {"useMaxWidth": true, "htmlLabels": true}} }%%
 flowchart TB
-  subgraph Frontend["internet-map-globe frontend"]
+  subgraph Frontend["InternetMap-Geographic frontend"]
     Offline["/upload/3d or /upload/2d<br/>file-based compose topology"]
     Live["/map/3d or /map/2d<br/>live Docker topology"]
   end
@@ -433,7 +433,7 @@ Live capture state guards:
 | `TopologyNodeHoverCard.vue` | `api/map.ts` -> `utils/request.ts` | `emulator-service /container/:id/bgp` | Load live router BGP sessions. |
 | `TopologyNodeHoverCard.vue` | `api/map.ts` -> `utils/request.ts` | `emulator-service /container/:id/bgp/:peer` | Enable or disable one BGP peer. |
 | `TopologyNodeHoverCard.vue` | `api/map.ts` -> `utils/request.ts` | `emulator-service /container/:id/net` | Read or update container network connectivity. |
-| `TopologyNodeHoverCard.vue` | `utils/window-manager.ts` | iframe `/console#<container-id>` inside current page | Launch container console in the globe page, consistent with `internet-map`. |
+| `TopologyNodeHoverCard.vue` | `utils/window-manager.ts` | iframe `/console#<container-id>` inside current page | Launch container console in the globe page, consistent with `InternetMap-Toplogy`. |
 | `liveEmulatorTopology3D.vue` | live traffic observer service | `traffic-observer-service GET /filter` | Load current capture filter. |
 | `liveEmulatorTopology3D.vue` | live traffic observer service | `traffic-observer-service PUT /filter` | Start, update, or stop live capture. |
 | `liveEmulatorTopology3D.vue` | live traffic observer client | `traffic-observer-service WS /ws/packets` | Receive live packet messages. |
@@ -660,7 +660,7 @@ pnpm run test:e2e
 
 Current test coverage documentation is maintained in:
 
-- [internet-map-globe-testing.md](./test/internet-map-globe-testing.md)
+- [internet-map-geographic-testing.md](./test/internet-map-geographic-testing.md)
 
 ## Notes for maintainers
 

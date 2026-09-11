@@ -1,4 +1,4 @@
-﻿# satellite-emulator 测试覆盖文档
+# InternetMap-Satellite 测试覆盖文档
 
 本文档描述 `InternetMap-Satellite/frontend` 当前测试用例覆盖的模块、页面和测试函数。
 

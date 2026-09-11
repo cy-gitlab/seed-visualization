@@ -1,20 +1,20 @@
-name: CI Satellite Emulator Frontend
+name: CI InternetMap-Satellite Frontend
 
 on:
   # pull_request:
   #   branches:
   #     - main
   #   paths:
-  #     - "satellite-emulator/**"
+  #     - "InternetMap-Satellite/**"
   #     - "docker-compose.yml"
-  #     - ".github/workflows/ci-satellite-emulator.yaml"
+  #     - ".github/workflows/ci-internet-map-satellite.yaml"
   # push:
   #   branches:
   #     - main
   #   paths:
-  #     - "satellite-emulator/**"
+  #     - "InternetMap-Satellite/**"
   #     - "docker-compose.yml"
-  #     - ".github/workflows/ci-satellite-emulator.yaml"
+  #     - ".github/workflows/ci-internet-map-satellite.yaml"
   workflow_call:
     inputs:
       run-static-checks:
@@ -61,14 +61,14 @@ env:
   PNPM_VERSION: "9.15.9"
 
 jobs:
-  satellite-emulator:
-    name: Satellite Emulator Frontend
+  internet-map-satellite:
+    name: InternetMap-Satellite Frontend
     runs-on: ubuntu-latest
     permissions:
       contents: read
     defaults:
       run:
-        working-directory: satellite-emulator/frontend
+        working-directory: InternetMap-Satellite/frontend
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -124,10 +124,10 @@ jobs:
         if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.run-e2e-tests) }}
         uses: actions/upload-artifact@v6
         with:
-          name: satellite-emulator-playwright-report
-          path: satellite-emulator/frontend/playwright-report
+          name: internet-map-satellite-playwright-report
+          path: InternetMap-Satellite/frontend/playwright-report
 
       - name: Docker build
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run-docker-build }}
         working-directory: .
-        run: docker compose build seedemu_satellite_emulator
+        run: docker compose build seedemu_internet_map_satellite
