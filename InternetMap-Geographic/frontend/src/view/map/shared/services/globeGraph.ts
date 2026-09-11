@@ -2,6 +2,7 @@ import type { Edge, Vertex } from '@/utils/map-datasource'
 import type { EmulatorNetwork, EmulatorNode } from '@/utils/types'
 
 export type GlobeNodeKind = 'star' | 'dot' | 'hexagon' | 'diamond' | 'node'
+export type GlobeTopologyType = 'ix' | 'network' | 'router' | 'host'
 
 export type GlobeNode = {
   id: string
@@ -10,6 +11,7 @@ export type GlobeNode = {
   lon: number
   height: number
   kind: GlobeNodeKind
+  topologyType?: GlobeTopologyType
   parentId?: string
   hasExplicitGeo?: boolean
   isIxRouter?: boolean

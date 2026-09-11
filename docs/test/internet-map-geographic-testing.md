@@ -36,4 +36,20 @@ E2E 自动启动本地开发服务器，使用 `http://127.0.0.1:5174` 和 `/dev
 
 Playwright 将 HTML 报告输出到 `playwright-report/`；CI 上传为 `internet-map-geographic-playwright-report`。失败时的测试产物位于 `test-results/`。
 
-当前测试未覆盖真实后端通信、上传文件后的完整图形渲染、蠕虫传播及控制台任务栏交互。
+当前测试未覆盖真实后端通信、蠕虫传播及控制台任务栏交互。
+
+### 大规模上传与真实渲染回归
+
+在 `InternetMap-Geographic/frontend` 下运行：
+
+```bash
+pnpm exec playwright test large-upload-dock scene-interaction --workers=1
+```
+
+`large-upload-dock.spec.ts` 上传示例中的 `docker-compose-10k.yml`，等待首帧完成，再连续切换 Settings、Traffic Replay、Overview 两轮。测试使用真实 Cesium 和 Chromium 软件 WebGL，验证页签状态更新及切换期间没有调用拓扑重建。为避免外部瓦片服务影响结果，测试屏蔽卫星瓦片请求。
+
+HTML 报告附件包含自动点击耗时、点击事件到 DOM 更新及下一次动画帧回调的耗时和主线程长任务。自动点击耗时包含 Playwright 等待；动画帧回调也不等于屏幕实际显示时间。软件渲染结果用于回归对比，不能替代目标机器上使用 GPU 的交互实测。
+
+`scene-interaction.spec.ts` 验证 3D/2D 高亮复用连线几何、类型隐藏/恢复不替换连线对象、相机交互期间保持连线显示，以及按需渲染下发包动画能够结束。静态连线按位置数量分批，保持原始曲线采样、分辨率和抗锯齿设置；`batchedPolylines.test.ts` 验证分批保留全部坐标和对象身份，以及替换拓扑时释放旧集合。
+
+Settings 中的 IX、Network、Router、Host 使用组级 `show` 切换。完整拓扑只在上传新文件、实时数据或结构筛选变化时重建；类型开关不清空节点、连线或重新计算曲线。`large-upload-dock.spec.ts` 会在 10k 示例上验证隐藏 Host 只发生可见性更新，拓扑清空次数和 `renderGraph` 调用次数均不增加。

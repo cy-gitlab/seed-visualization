@@ -1,13 +1,13 @@
 ﻿<template>
   <section class="emulator-topology-3d-dock-page">
     <section class="emulator-topology-3d-stats">
-      <el-popover placement="top-start" width="390" trigger="click" popper-class="emulator-topology-3d-filter-popover">
+      <el-popover v-model:visible="asPickerVisible" placement="top-start" width="390" trigger="click" popper-class="emulator-topology-3d-filter-popover">
         <template #reference>
           <button type="button" class="emulator-topology-3d-stat-card">
             <strong>{{ stats.autonomousSystems }}</strong><span>AS</span>
           </button>
         </template>
-        <section class="emulator-topology-3d-picker">
+        <section v-if="asPickerVisible" class="emulator-topology-3d-picker">
           <header>
             <strong>Transit AS</strong>
             <el-switch v-model="showAsDetails" size="small" active-text="Details" />
@@ -39,11 +39,13 @@
               trigger="hover"
               :show-after="160"
               popper-class="emulator-topology-3d-as-detail-popover"
+              @show="visibleDetailAsn = item.asn"
+              @hide="visibleDetailAsn === item.asn && (visibleDetailAsn = undefined)"
             >
               <template #reference>
                 <span :class="{ active: selectedAsns.has(item.asn) }">AS-{{ item.asn }} / {{ item.routers }} routers</span>
               </template>
-              <el-table :data="asDetailsByAsn.get(item.asn) ?? []" max-height="360" size="small">
+              <el-table v-if="visibleDetailAsn === item.asn" :data="asDetailsByAsn.get(item.asn) ?? []" max-height="360" size="small">
                 <el-table-column type="index" label="#" width="52" />
                 <el-table-column prop="name" label="Router" width="120" />
                 <el-table-column prop="role" label="Role" width="140" />
@@ -53,13 +55,13 @@
           </div>
         </section>
       </el-popover>
-      <el-popover placement="top-start" width="360" trigger="click" popper-class="emulator-topology-3d-filter-popover">
+      <el-popover v-model:visible="ixPickerVisible" placement="top-start" width="360" trigger="click" popper-class="emulator-topology-3d-filter-popover">
         <template #reference>
           <button type="button" class="emulator-topology-3d-stat-card">
             <strong>{{ stats.ix }}</strong><span>IX</span>
           </button>
         </template>
-        <section class="emulator-topology-3d-picker">
+        <section v-if="ixPickerVisible" class="emulator-topology-3d-picker">
           <header><strong>IX networks</strong></header>
           <el-select
             v-model="selectedIxNameValues"
@@ -122,6 +124,16 @@
 
 <script setup lang="ts">
 import { Aim } from '@element-plus/icons-vue'
+import { onDeactivated, ref } from 'vue'
+
+const asPickerVisible = ref(false)
+const ixPickerVisible = ref(false)
+const visibleDetailAsn = ref<string>()
+onDeactivated(() => {
+  asPickerVisible.value = false
+  ixPickerVisible.value = false
+  visibleDetailAsn.value = undefined
+})
 import type {
   EmulatorTopologyAsDetail,
   EmulatorTopologyAsSummary,

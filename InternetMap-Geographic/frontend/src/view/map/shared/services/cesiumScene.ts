@@ -21,7 +21,10 @@
   Viewer,
   WebMercatorTilingScheme,
 } from 'cesium'
-import type { GlobeGraph, GlobeNode } from './globeGraph'
+import type { GlobeGraph, GlobeNode, GlobeTopologyType } from './globeGraph'
+import { canReuseGraphGeometry } from './graphRenderCache'
+import { BatchedPolylines } from './batchedPolylines'
+import { GroupedScenePrimitives } from './groupedScenePrimitives'
 
 Ion.defaultAccessToken = ''
 
@@ -62,8 +65,9 @@ const LABEL_LIMIT_THRESHOLD_2D = 500
 const LARGE_GRAPH_LABEL_LIMIT_2D = 360
 const HUGE_GRAPH_LABEL_LIMIT_2D = 220
 const LINK_CURVE_SEGMENTS_2D = 14
-const HOVER_PICK_THROTTLE_MS_2D = 50
-const HOVER_PICK_MIN_MOVE_PX_2D = 4
+const HOVER_PICK_THROTTLE_MS = 100
+const INTERACTION_GRAPH_THRESHOLD = 4000
+const HOVER_PICK_MIN_MOVE_PX = 4
 
 type GeoPoint = {
   lat: number
@@ -97,6 +101,8 @@ export type Map3DSceneApi = {
   orientToNode: (nodeId: string, height?: number) => void
   onNodeClick: (handler: (node: GlobeNode) => void) => void
   onNodeHover: (handler: (node: GlobeNode | undefined, position: { x: number; y: number }) => void) => void
+  setHoverEnabled: (enabled: boolean) => void
+  setTopologyVisibility: (visibleTypes?: Map3DRenderOptions['visibleTypes']) => void
   destroy: () => void
 }
 
@@ -111,7 +117,18 @@ export type Map3DRenderOptions = {
   showRouterLabels?: boolean
   showNodeLabels?: boolean
   expandedRouterParentIds?: string[]
+  visibleTypes?: Partial<Record<'ix' | 'network' | 'router' | 'host', boolean>>
 }
+
+function isTopologyNodeVisible(node: GlobeNode, options: Map3DRenderOptions) {
+  return !node.topologyType || options.visibleTypes?.[node.topologyType] !== false
+}
+
+function getEdgeVisibilityGroup(from: GlobeNode, to: GlobeNode) {
+  return [from.topologyType ?? 'other', to.topologyType ?? 'other'].sort().join(':')
+}
+
+const TOPOLOGY_TYPES: GlobeTopologyType[] = ['ix', 'network', 'router', 'host']
 
 function createColorMaterial(color: Color) {
   return Material.fromType('Color', { color })
@@ -776,6 +793,8 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     sceneModePicker: false,
     selectionIndicator: false,
     shouldAnimate: true,
+    requestRenderMode: true,
+    maximumRenderTimeChange: Number.POSITIVE_INFINITY,
     timeline: false,
   })
 
@@ -810,14 +829,14 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
   const gridLines = viewer.scene.primitives.add(new PolylineCollection())
   addReferenceGrid(gridLines)
 
-  const lines = viewer.scene.primitives.add(new PolylineCollection())
+  const lines = viewer.scene.primitives.add(new BatchedPolylines())
   const packetHopLines = viewer.scene.primitives.add(new PolylineCollection())
   const packetHopPoints = viewer.scene.primitives.add(new PointPrimitiveCollection())
-  const points = viewer.scene.primitives.add(new PointPrimitiveCollection())
-  const searchHighlightPoints = viewer.scene.primitives.add(new PointPrimitiveCollection())
+  const points = viewer.scene.primitives.add(new GroupedScenePrimitives(() => new PointPrimitiveCollection()))
+  const searchHighlightPoints = viewer.scene.primitives.add(new GroupedScenePrimitives(() => new PointPrimitiveCollection()))
   const flashPoints = viewer.scene.primitives.add(new PointPrimitiveCollection())
-  const billboards = viewer.scene.primitives.add(new BillboardCollection())
-  const labels = viewer.scene.primitives.add(new LabelCollection())
+  const billboards = viewer.scene.primitives.add(new GroupedScenePrimitives(() => new BillboardCollection()))
+  const labels = viewer.scene.primitives.add(new GroupedScenePrimitives(() => new LabelCollection()))
   const starImage = createStarImage('#ffcc33', '#ff4a2a')
   const highlightedStarImage = createStarImage('#ff5a3d', '#ffe066')
   const hoveredStarImage = createStarImage('#ffe066', '#ff1f1f')
@@ -834,14 +853,19 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
   const packetHopTracks: PacketHopTrack[] = []
   const flashPointByNodeId = new Map<string, any>()
   const flashTimerIds = new Map<string, number>()
+  let previousGraph: GlobeGraph | undefined
+  let previousOptions = ''
+  const nodePrimitives = new Map<string, { primitive: any; billboard: boolean }>()
+  const edgePrimitives: any[] = []
   let hoveredStarId: string | undefined
   let cameraInteracting = false
   let cameraInteractionStartedAtMs = 0
   let bloomEnabledBeforeInteraction = viewer.scene.postProcessStages.bloom.enabled
-  let hoverPickFrameId: number | undefined
+  let hoverPickTimerId: number | undefined
   let pendingHoverPosition: Cartesian2 | undefined
   let lastHoverPickAtMs = 0
   let lastHoverPickPosition: Cartesian2 | undefined
+  let hoverEnabled = true
   let nodeClickHandler: ((node: GlobeNode) => void) | undefined
   let nodeHoverHandler: ((node: GlobeNode | undefined, position: { x: number; y: number }) => void) | undefined
 
@@ -854,6 +878,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     viewer.scene.postProcessStages.bloom.enabled = false
     setHoveredStar(undefined)
     nodeHoverHandler?.(undefined, { x: 0, y: 0 })
+    viewer.scene.requestRender()
   }
 
   function endInteractionMode() {
@@ -862,10 +887,12 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     cameraInteracting = false
     cameraInteractionStartedAtMs = 0
     labels.show = true
+    lastHoverPickPosition = undefined
     viewer.scene.postProcessStages.bloom.enabled = bloomEnabledBeforeInteraction
     packetHopTracks.forEach((track) => {
       track.startedAtMs += pausedMs
     })
+    viewer.scene.requestRender()
   }
 
   viewer.camera.moveStart.addEventListener(beginInteractionMode)
@@ -886,54 +913,122 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     })
   }
 
-  function renderGraph(graph: GlobeGraph, options: Map3DRenderOptions = {}) {
-    points.removeAll()
-    searchHighlightPoints.removeAll()
-    flashPoints.removeAll()
-    billboards.removeAll()
-    labels.removeAll()
-    lines.removeAll()
-    starBillboards.clear()
-    starNodes.clear()
-    renderedNodePositions.clear()
-    renderedNodes.clear()
-    lastRenderGeos = new Map<string, GeoPoint>()
-    packetHopTracks.splice(0, packetHopTracks.length)
-    packetHopLines.removeAll()
-    packetHopPoints.removeAll()
-    clearFlashNodes()
-    hoveredStarId = undefined
+  function upsertNode(id: string, billboard: boolean, attributes: Record<string, unknown>, visible: boolean) {
+    const existing = nodePrimitives.get(id)
+    if (existing) {
+      Object.assign(existing.primitive, attributes)
+      return existing.primitive
+    }
+    const node = attributes.id as GlobeNode
+    const group = node.topologyType ?? 'other'
+    return billboard ? billboards.add(attributes, group, visible) : points.add(attributes, group, visible)
+  }
 
+  function setTopologyVisibility(visibleTypes: Map3DRenderOptions['visibleTypes'] = {}) {
+    for (const left of TOPOLOGY_TYPES) {
+      const visible = visibleTypes[left] !== false
+      points.setGroupShow(left, visible)
+      billboards.setGroupShow(left, visible)
+      labels.setGroupShow(left, visible)
+      searchHighlightPoints.setGroupShow(left, visible)
+      for (const right of TOPOLOGY_TYPES) {
+        const group = [left, right].sort().join(':')
+        lines.setGroupShow(group, visible && visibleTypes[right] !== false)
+      }
+    }
+    viewer.scene.requestRender()
+  }
+
+  function renderGraph(graph: GlobeGraph, options: Map3DRenderOptions = {}) {
+    // Visibility is a presentation-only option and must not invalidate cached
+    // positions, curves, or GPU geometry.
+    const { visibleTypes: _visibleTypes, ...geometryOptions } = options
+    const optionsKey = JSON.stringify(geometryOptions)
+    const largeGraph = graph.nodes.length >= INTERACTION_GRAPH_THRESHOLD || graph.edges.length >= INTERACTION_GRAPH_THRESHOLD
+    // Keep symbols and lines sharp regardless of topology size.
+    viewer.resolutionScale = 1
+    viewer.scene.msaaSamples = 4
+    bloomEnabledBeforeInteraction = !is2DMode && !largeGraph
+    viewer.scene.postProcessStages.bloom.enabled = !cameraInteracting && bloomEnabledBeforeInteraction
+    const expandedRouterParentIds = new Set(options.expandedRouterParentIds ?? [])
+    const reuse = previousGraph !== undefined && previousOptions === optionsKey && canReuseGraphGeometry(previousGraph, graph)
+      && graph.nodes.every((node, index) => shouldRenderRouterNode(node, expandedRouterParentIds)
+        === shouldRenderRouterNode(previousGraph!.nodes[index]!, expandedRouterParentIds))
+    const changedIds = new Set(graph.nodes.filter((node, index) => {
+      const previous = previousGraph?.nodes[index]
+      return !reuse || node.highlighted !== previous?.highlighted || node.searchHighlighted !== previous?.searchHighlighted
+    }).map(node => node.id))
+    if (!reuse) {
+      points.removeAll()
+      searchHighlightPoints.removeAll()
+      flashPoints.removeAll()
+      billboards.removeAll()
+      labels.removeAll()
+      lines.removeAll()
+      starBillboards.clear()
+      starNodes.clear()
+      renderedNodePositions.clear()
+      renderedNodes.clear()
+      lastRenderGeos = new Map<string, GeoPoint>()
+      packetHopTracks.splice(0, packetHopTracks.length)
+      packetHopLines.removeAll()
+      packetHopPoints.removeAll()
+      clearFlashNodes()
+      hoveredStarId = undefined
+
+      nodePrimitives.clear()
+      edgePrimitives.length = 0
+    } else {
+      // These small overlays change with selection; topology and active packet
+      // animations remain in place.
+      searchHighlightPoints.removeAll()
+      labels.removeAll()
+    }
     const nodeScale = options.nodeScale ?? 2
     const showRouterLabels = options.showRouterLabels ?? true
     const showNodeLabels = options.showNodeLabels ?? true
-    const expandedRouterParentIds = new Set(options.expandedRouterParentIds ?? [])
     const pointScale = clampNodeScale(nodeScale)
     const spreadScale = pointScale * LINK_SPREAD_MULTIPLIER
     const renderNodes = graph.nodes.filter((node) => shouldRenderRouterNode(node, expandedRouterParentIds))
-    const renderLabelIds = selectRenderableLabelIds(renderNodes, showRouterLabels, showNodeLabels, is2DMode)
+    const visibleRenderNodes = renderNodes.filter(node => isTopologyNodeVisible(node, options))
+    const renderLabelIds = selectRenderableLabelIds(visibleRenderNodes, showRouterLabels, showNodeLabels, is2DMode)
     const linkCurveSegments = is2DMode ? LINK_CURVE_SEGMENTS_2D : LINK_CURVE_SEGMENTS
 
     const nodeById = new Map(renderNodes.map((node) => [node.id, node]))
-    const renderGeos = getAvoidedRenderGeos(renderNodes, nodeById, spreadScale)
+    const renderGeos = reuse ? lastRenderGeos : getAvoidedRenderGeos(renderNodes, nodeById, spreadScale)
     lastRenderGeos = renderGeos
     lastPointScale = pointScale
 
-    graph.edges.forEach((edge) => {
+    // A group-level toggle skips whole primitive collections without marking
+    // every polyline's vertex data dirty.
+    setTopologyVisibility(options.visibleTypes)
+
+    graph.edges.forEach((edge, edgeIndex) => {
       const from = nodeById.get(edge.from)
       const to = nodeById.get(edge.to)
       if (!from || !to) return
+      const visible = isTopologyNodeVisible(from, options) && isTopologyNodeVisible(to, options)
 
+      if (reuse) {
+        const line = edgePrimitives[edgeIndex]
+        if (changedIds.has(from.id) || changedIds.has(to.id)) {
+          if (line) {
+            line.width = getEdgeWidth(from, to, pointScale)
+            line.material = getRenderEdgeMaterial(edge, from, to)
+          }
+        }
+        return
+      }
       const sameParentRouterEdge = !edge.internalRouterLink && from.kind === 'dot' && to.kind === 'dot' && from.parentId && from.parentId === to.parentId
       const positions = sameParentRouterEdge
         ? getSameParentCurvePositions(from, to, renderGeos, pointScale, linkCurveSegments)
         : getSmoothLinkCurvePositions(from, to, renderGeos, pointScale, linkCurveSegments)
 
-      lines.add({
+      edgePrimitives[edgeIndex] = lines.add({
         positions,
         width: getEdgeWidth(from, to, pointScale),
         material: getRenderEdgeMaterial(edge, from, to),
-      })
+      }, getEdgeVisibilityGroup(from, to), visible)
     })
 
     renderNodes.forEach((node) => {
@@ -945,7 +1040,8 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
         renderedNodePositions.set(node.sourceId, position)
       }
 
-      if (node.searchHighlighted) {
+      const nodeVisible = isTopologyNodeVisible(node, options)
+      if (node.searchHighlighted && nodeVisible) {
         searchHighlightPoints.add({
           id: node,
           position,
@@ -955,42 +1051,47 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
           outlineWidth: getSearchHaloOutlineWidth(pointScale),
           scaleByDistance: new NearFarScalar(1_500_000, 1.25, 18_000_000, 0.62),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        })
+        }, node.topologyType ?? 'other', nodeVisible)
       }
-      if (node.kind === 'star') {
-        const billboard = billboards.add({
-          id: node,
-          image: node.highlighted ? highlightedStarImage : starImage,
-          position,
-          width: getNodeSize(node) * pointScale,
-          height: getNodeSize(node) * pointScale,
-          verticalOrigin: VerticalOrigin.CENTER,
-          scaleByDistance: new NearFarScalar(1_500_000, node.highlighted ? 1.35 : 1.18, 18_000_000, node.highlighted ? 0.72 : 0.58),
-        })
-        starBillboards.set(node.id, billboard)
-        starNodes.set(node.id, node)
-      } else if (node.kind === 'hexagon' || node.kind === 'diamond') {
-        billboards.add({
-          id: node,
-          image: node.kind === 'diamond'
-            ? node.highlighted ? highlightedNetworkImage : networkImage
-            : node.highlighted ? highlightedHostImage : hostImage,
-          position,
-          width: getNodeSize(node) * pointScale,
-          height: getNodeSize(node) * pointScale,
-          verticalOrigin: VerticalOrigin.CENTER,
-          scaleByDistance: new NearFarScalar(1_500_000, node.highlighted ? 1.4 : 1.16, 18_000_000, node.highlighted ? 0.72 : 0.52),
-        })
-      } else {
-        points.add({
-          id: node,
-          position,
-          pixelSize: getNodeSize(node) * pointScale,
-          color: getNodeFillColor(node),
-          outlineColor: getNodeOutlineColor(node),
-          outlineWidth: getNodeOutlineWidth(node, pointScale),
-          scaleByDistance: new NearFarScalar(1_500_000, node.highlighted ? 1.5 : 1.25, 18_000_000, node.highlighted ? 0.72 : 0.58),
-        })
+      if (changedIds.has(node.id)) {
+        if (node.kind === 'star') {
+          const billboard = upsertNode(node.id, true, {
+            id: node,
+            image: node.highlighted ? highlightedStarImage : starImage,
+            position,
+            width: getNodeSize(node) * pointScale,
+            height: getNodeSize(node) * pointScale,
+            verticalOrigin: VerticalOrigin.CENTER,
+            scaleByDistance: new NearFarScalar(1_500_000, node.highlighted ? 1.35 : 1.18, 18_000_000, node.highlighted ? 0.72 : 0.58),
+          }, nodeVisible)
+          nodePrimitives.set(node.id, { primitive: billboard, billboard: true })
+          starBillboards.set(node.id, billboard)
+          starNodes.set(node.id, node)
+        } else if (node.kind === 'hexagon' || node.kind === 'diamond') {
+          const primitive = upsertNode(node.id, true, {
+            id: node,
+            image: node.kind === 'diamond'
+              ? node.highlighted ? highlightedNetworkImage : networkImage
+              : node.highlighted ? highlightedHostImage : hostImage,
+            position,
+            width: getNodeSize(node) * pointScale,
+            height: getNodeSize(node) * pointScale,
+            verticalOrigin: VerticalOrigin.CENTER,
+            scaleByDistance: new NearFarScalar(1_500_000, node.highlighted ? 1.4 : 1.16, 18_000_000, node.highlighted ? 0.72 : 0.52),
+          }, nodeVisible)
+          nodePrimitives.set(node.id, { primitive, billboard: true })
+        } else {
+          const primitive = upsertNode(node.id, false, {
+            id: node,
+            position,
+            pixelSize: getNodeSize(node) * pointScale,
+            color: getNodeFillColor(node),
+            outlineColor: getNodeOutlineColor(node),
+            outlineWidth: getNodeOutlineWidth(node, pointScale),
+            scaleByDistance: new NearFarScalar(1_500_000, node.highlighted ? 1.5 : 1.25, 18_000_000, node.highlighted ? 0.72 : 0.58),
+          }, nodeVisible)
+          nodePrimitives.set(node.id, { primitive, billboard: false })
+        }
       }
 
       if (renderLabelIds.has(node.id)) {
@@ -1006,9 +1107,17 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
           pixelOffset: getLabelOffset(node, pointScale),
           heightReference: HeightReference.NONE,
           scaleByDistance: new NearFarScalar(1_500_000, node.highlighted ? 1.15 : 1, 14_000_000, node.highlighted ? 0.36 : node.kind === 'star' ? 0.35 : 0.18),
-        })
+        }, node.topologyType ?? 'other', nodeVisible)
       }
     })
+    previousGraph = { nodes: graph.nodes.map(node => ({ ...node })), edges: graph.edges.map(edge => ({ ...edge })) }
+    previousOptions = optionsKey
+    viewer.scene.requestRender()
+    if (hoveredStarId) {
+      const hovered = hoveredStarId
+      hoveredStarId = undefined
+      setHoveredStar(hovered)
+    }
   }
 
   function updatePacketHops() {
@@ -1038,6 +1147,12 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
 
   viewer.scene.preRender.addEventListener(updatePacketHops)
 
+  // postUpdate runs even when no frame is drawn; delayed hops must also wake rendering.
+  function requestPacketAnimationFrame() {
+    if (!cameraInteracting && packetHopTracks.length > 0) viewer.scene.requestRender()
+  }
+  viewer.scene.postUpdate.addEventListener(requestPacketAnimationFrame)
+
   function flashNode(nodeId: string, durationMs = 650) {
     if (!nodeId || durationMs <= 0) {
       clearFlashNodes()
@@ -1057,6 +1172,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
       scaleByDistance: new NearFarScalar(1_500_000, 1.25, 18_000_000, 0.52),
     })
     flashPointByNodeId.set(nodeId, point)
+    viewer.scene.requestRender()
 
     const timerId = window.setTimeout(() => {
       clearFlashNode(nodeId)
@@ -1081,6 +1197,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     if (point) {
       flashPoints.remove(point)
       flashPointByNodeId.delete(nodeId)
+      viewer.scene.requestRender()
     }
   }
 
@@ -1089,6 +1206,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     flashTimerIds.clear()
     flashPointByNodeId.clear()
     flashPoints.removeAll()
+    viewer.scene.requestRender()
   }
 
   function createPacketHopTrack(fromNodeId: string, toNodeId: string, durationMs: number, startedAtMs: number) {
@@ -1161,6 +1279,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     packetHopTracks.splice(0, packetHopTracks.length)
     packetHopLines.removeAll()
     packetHopPoints.removeAll()
+    viewer.scene.requestRender()
   }
 
   function pickGlobeNode(position: Cartesian2) {
@@ -1168,6 +1287,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     const pickedNodes = pickedObjects
       .map((picked) => picked.id)
       .filter((node): node is GlobeNode => Boolean(node?.id))
+      .map(node => renderedNodes.get(node.id) ?? node)
 
     return pickedNodes.find((node) => node.kind === 'star') ?? pickedNodes[0]
   }
@@ -1180,19 +1300,18 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     }
   }
 
-  function shouldSkip2DHoverPick(position: Cartesian2) {
-    if (!is2DMode) return false
+  function shouldSkipHoverPick(position: Cartesian2) {
     const nowMs = performance.now()
     if (lastHoverPickPosition) {
       const dx = position.x - lastHoverPickPosition.x
       const dy = position.y - lastHoverPickPosition.y
-      if (Math.hypot(dx, dy) < HOVER_PICK_MIN_MOVE_PX_2D) return true
+      if (Math.hypot(dx, dy) < HOVER_PICK_MIN_MOVE_PX) return true
     }
-    return nowMs - lastHoverPickAtMs < HOVER_PICK_THROTTLE_MS_2D
+    return nowMs - lastHoverPickAtMs < HOVER_PICK_THROTTLE_MS
   }
 
   function runHoverPick(position: Cartesian2) {
-    if (cameraInteracting || shouldSkip2DHoverPick(position)) return
+    if (!hoverEnabled || cameraInteracting || shouldSkipHoverPick(position)) return
     lastHoverPickAtMs = performance.now()
     lastHoverPickPosition = Cartesian2.clone(position, lastHoverPickPosition)
     const pickedNode = pickGlobeNode(position)
@@ -1201,18 +1320,14 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
   }
 
   function scheduleHoverPick(position: Cartesian2) {
-    if (!is2DMode) {
-      runHoverPick(position)
-      return
-    }
     pendingHoverPosition = Cartesian2.clone(position, pendingHoverPosition)
-    if (hoverPickFrameId !== undefined) return
-    hoverPickFrameId = window.requestAnimationFrame(() => {
-      hoverPickFrameId = undefined
+    if (hoverPickTimerId !== undefined) return
+    hoverPickTimerId = window.setTimeout(() => {
+      hoverPickTimerId = undefined
       const nextPosition = pendingHoverPosition
       pendingHoverPosition = undefined
       if (nextPosition) runHoverPick(nextPosition)
-    })
+    }, HOVER_PICK_THROTTLE_MS)
   }
 
   function setHoveredStar(nextStarId?: string) {
@@ -1238,6 +1353,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     }
 
     viewer.canvas.style.cursor = hoveredStarId ? 'pointer' : ''
+    viewer.scene.requestRender()
   }
 
   function orientToGraph(graph: GlobeGraph) {
@@ -1276,7 +1392,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     onNodeClick(handler: (node: GlobeNode) => void) {
       nodeClickHandler = handler
       viewer.screenSpaceEventHandler.setInputAction((event: { endPosition: Cartesian2 }) => {
-        if (cameraInteracting) return
+        if (!hoverEnabled || cameraInteracting) return
         scheduleHoverPick(event.endPosition)
       }, ScreenSpaceEventType.MOUSE_MOVE)
       viewer.screenSpaceEventHandler.setInputAction((event: { position: Cartesian2 }) => {
@@ -1288,18 +1404,27 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     onNodeHover(handler: (node: GlobeNode | undefined, position: { x: number; y: number }) => void) {
       nodeHoverHandler = handler
     },
+    setHoverEnabled(enabled: boolean) {
+      hoverEnabled = enabled
+      lastHoverPickPosition = undefined
+      if (!enabled) {
+        setHoveredStar(undefined)
+        nodeHoverHandler?.(undefined, { x: 0, y: 0 })
+      }
+    },
+    setTopologyVisibility,
     destroy() {
       clearFlashNodes()
       clearPacketAnimations()
-      if (hoverPickFrameId !== undefined) {
-        window.cancelAnimationFrame(hoverPickFrameId)
-        hoverPickFrameId = undefined
+      if (hoverPickTimerId !== undefined) {
+        window.clearTimeout(hoverPickTimerId)
+        hoverPickTimerId = undefined
       }
       viewer.camera.moveStart.removeEventListener(beginInteractionMode)
       viewer.camera.moveEnd.removeEventListener(endInteractionMode)
       viewer.scene.preRender.removeEventListener(updatePacketHops)
+      viewer.scene.postUpdate.removeEventListener(requestPacketAnimationFrame)
       viewer.destroy()
     },
   }
 }
-

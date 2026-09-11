@@ -107,7 +107,6 @@ const {
   asDetailsByAsn,
   resetTopologyState,
   setTopologyData,
-  renderGraph,
   refreshDisplayGraph,
   applySearch,
   submitSearchFromKeyboard,
@@ -796,7 +795,6 @@ watch(
   () => {
     if (!mapData.value) return
     selectedNode.value = undefined
-    renderGraph(false)
   },
 )
 
@@ -857,6 +855,8 @@ onMounted(() => {
     <Map3DGlobe
       ref="globeRef"
       :graph="graph"
+      :hover-enabled="showHoverDetails"
+      :visible-types="visibleTypes"
       :node-scale="nodeScale"
       :show-router-labels="showNodeLabels"
       :show-node-labels="showNodeLabels"

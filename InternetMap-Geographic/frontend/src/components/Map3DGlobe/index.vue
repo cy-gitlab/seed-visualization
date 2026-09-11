@@ -12,6 +12,7 @@ import {
   type Map3DSceneMode,
 } from '@/view/map/shared/services/cesiumScene'
 import type { GlobeGraph, GlobeNode } from '@/view/map/shared/services/globeGraph'
+import type { EmulatorTopologyVisibleTypes } from '@/view/map/shared/services/emulatorTopologyGraph'
 
 const props = defineProps<{
   graph: GlobeGraph
@@ -21,6 +22,8 @@ const props = defineProps<{
   expandedRouterParentIds?: string[]
   orientToGraph?: boolean
   sceneMode?: Map3DSceneMode
+  hoverEnabled?: boolean
+  visibleTypes?: EmulatorTopologyVisibleTypes
 }>()
 const emit = defineEmits<{
   rendered: [graph: GlobeGraph]
@@ -30,6 +33,7 @@ const emit = defineEmits<{
 
 const containerRef = ref<HTMLElement>()
 let sceneApi: Map3DSceneApi | undefined
+let removeRenderedListener: (() => void) | undefined
 
 function render() {
   const renderedGraph = props.graph
@@ -40,10 +44,16 @@ function render() {
     expandedRouterParentIds: props.expandedRouterParentIds,
   }
   sceneApi?.renderGraph(renderedGraph, options)
+  sceneApi?.setTopologyVisibility(props.visibleTypes)
   if (props.orientToGraph && renderedGraph.nodes.length > 0) {
     sceneApi?.orientToGraph(renderedGraph)
   }
-  requestAnimationFrame(() => {
+  // A queued animation callback is not proof that Cesium has drawn the graph.
+  // Keep the loading overlay until the first actual frame is complete.
+  removeRenderedListener?.()
+  removeRenderedListener = sceneApi?.viewer.scene.postRender.addEventListener(() => {
+    removeRenderedListener?.()
+    removeRenderedListener = undefined
     emit('rendered', renderedGraph)
   })
 }
@@ -84,6 +94,7 @@ onMounted(() => {
   sceneApi.viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_DOUBLE_CLICK)
   sceneApi.onNodeClick((node) => emit('nodeClick', node))
   sceneApi.onNodeHover((node, position) => emit('nodeHover', node, position))
+  sceneApi.setHoverEnabled(props.hoverEnabled ?? true)
   render()
 })
 
@@ -100,7 +111,14 @@ watch(
   { deep: false },
 )
 
+watch(() => props.hoverEnabled, enabled => sceneApi?.setHoverEnabled(enabled ?? true))
+watch(
+  () => [props.visibleTypes?.ix, props.visibleTypes?.network, props.visibleTypes?.router, props.visibleTypes?.host],
+  () => sceneApi?.setTopologyVisibility(props.visibleTypes),
+)
+
 onBeforeUnmount(() => {
+  removeRenderedListener?.()
   sceneApi?.destroy()
 })
 

@@ -1,5 +1,6 @@
-﻿import { computed, nextTick, ref } from 'vue'
+﻿import { computed, nextTick, ref, shallowRef, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
+import { watch } from 'vue'
 import type { EmulatorNetwork, EmulatorNode } from '@/utils/types'
 import {
   createEmulatorTopologyGraph,
@@ -83,10 +84,10 @@ function createIxSummary(networks: EmulatorNetwork[]) {
 }
 
 export function useEmulatorTopologyGraph(options: EmulatorTopologyGraphControllerOptions = {}) {
-  const graph = ref<GlobeGraph>({ nodes: [], edges: [] })
-  const baseGraph = ref<GlobeGraph>({ nodes: [], edges: [] })
-  const containers = ref<EmulatorNode[]>([])
-  const networks = ref<EmulatorNetwork[]>([])
+  const graph = shallowRef<GlobeGraph>({ nodes: [], edges: [] })
+  const baseGraph = shallowRef<GlobeGraph>({ nodes: [], edges: [] })
+  const containers = shallowRef<EmulatorNode[]>([])
+  const networks = shallowRef<EmulatorNetwork[]>([])
   const loadingVisible = ref(false)
   const waitingForGraphRender = ref(false)
   const orientToInitialNode = ref(true)
@@ -112,6 +113,22 @@ export function useEmulatorTopologyGraph(options: EmulatorTopologyGraphControlle
 
   let renderGeneration = 0
   let pendingRenderedGraph: GlobeGraph | undefined
+
+  function updateVisibleStats() {
+    const visibleNodeIds = new Set(graph.value.nodes
+      .filter(node => !node.topologyType || visibleTypes.value[node.topologyType])
+      .map(node => node.id))
+    stats.value = {
+      ...stats.value,
+      renderedNodes: visibleNodeIds.size,
+      renderedLinks: graph.value.edges.filter(edge => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to)).length,
+    }
+  }
+
+  watch(
+    () => [visibleTypes.value.ix, visibleTypes.value.network, visibleTypes.value.router, visibleTypes.value.host],
+    updateVisibleStats,
+  )
 
   const selectedAsnValues = computed({
     get: () => Array.from(selectedAsns.value),
@@ -169,8 +186,8 @@ export function useEmulatorTopologyGraph(options: EmulatorTopologyGraphControlle
   }
 
   async function setTopologyData(value: { nodes: EmulatorNode[]; nets: EmulatorNetwork[] }, orientToGraph = true) {
-    containers.value = value.nodes ?? []
-    networks.value = value.nets ?? []
+    containers.value = toRaw(value.nodes ?? [])
+    networks.value = toRaw(value.nets ?? [])
     resetTopologyFilters()
     await renderGraph(orientToGraph)
   }
@@ -186,7 +203,9 @@ export function useEmulatorTopologyGraph(options: EmulatorTopologyGraphControlle
     if (generation !== renderGeneration) return
 
     const result = createEmulatorTopologyGraph(containers.value, networks.value, {
-      visibleTypes: visibleTypes.value,
+      // Keep all Settings categories in the scene. Cesium toggles their
+      // visibility without rebuilding topology geometry.
+      visibleTypes: { ix: true, network: true, router: true, host: true },
       keyword: '',
       selectedAsns: Array.from(selectedAsns.value),
       selectedIxNames: Array.from(selectedIxNames.value),
@@ -200,6 +219,7 @@ export function useEmulatorTopologyGraph(options: EmulatorTopologyGraphControlle
       ...result.stats,
       renderedLinks: nextGraph.edges.length,
     }
+    updateVisibleStats()
     expandedParentIds.value = result.expandedParentIds
 
     if (graph.value.nodes.length === 0) {
@@ -236,12 +256,14 @@ export function useEmulatorTopologyGraph(options: EmulatorTopologyGraphControlle
       ...stats.value,
       renderedLinks: nextGraph.edges.length,
     }
+    updateVisibleStats()
   }
 
   function applySearch() {
     const query = keyword.value.trim()
     selectedNode.value = undefined
-    searchHighlightedNodeIds.value = findTopologySearchNodeIds(baseGraph.value.nodes, query)
+    const visibleNodes = baseGraph.value.nodes.filter(node => !node.topologyType || visibleTypes.value[node.topologyType])
+    searchHighlightedNodeIds.value = findTopologySearchNodeIds(visibleNodes, query)
     if (query && searchHighlightedNodeIds.value.size === 0) {
       ElMessage.warning('No matching node found in the current visible topology.')
     }
@@ -264,7 +286,8 @@ export function useEmulatorTopologyGraph(options: EmulatorTopologyGraphControlle
   }
 
   function querySearchSuggestions(query: string, callback: (suggestions: TopologySearchSuggestion[]) => void) {
-    callback(buildTopologySearchSuggestions(baseGraph.value.nodes, query))
+    const visibleNodes = baseGraph.value.nodes.filter(node => !node.topologyType || visibleTypes.value[node.topologyType])
+    callback(buildTopologySearchSuggestions(visibleNodes, query))
   }
 
   function selectSearchSuggestion(suggestion: TopologySearchSuggestion) {

@@ -1,7 +1,7 @@
 ﻿<template>
   <aside
     class="emulator-topology-3d-dock"
-    :class="{ 'is-collapsed': collapsed }"
+    :class="{ 'is-collapsed': collapsed, 'is-large-graph': stats.renderedNodes >= 4000 || stats.renderedLinks >= 4000 }"
     :style="{ '--emulator-topology-3d-dock-bottom': bottomOffset }"
     data-testid="emulator-topology-3d-dock"
   >
@@ -35,6 +35,7 @@
 
       <slot name="after-header" />
 
+      <KeepAlive>
       <EmulatorTopologyOverviewDockPage
         v-if="activePage === 'overview'"
         v-model:selected-asn-values="selectedAsnValues"
@@ -103,6 +104,8 @@
         @seek-position="$emit('trafficSeekPosition', $event)"
       />
 
+      </KeepAlive>
+
       <nav class="emulator-topology-3d-tabs">
         <button type="button" :class="{ active: activePage === 'overview' }" @click="$emit('update:activePage', 'overview')">
           <Grid />
@@ -122,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { KeepAlive, ref } from 'vue'
 import {
   Grid,
   Minus,
@@ -216,6 +219,11 @@ defineEmits<{
 </script>
 
 <style scoped lang="scss">
+.emulator-topology-3d-dock.is-large-graph {
+  backdrop-filter: none;
+  background: rgba(4, 13, 23, 0.97);
+}
+
 .emulator-topology-3d-dock {
   position: absolute;
   right: 22px;
