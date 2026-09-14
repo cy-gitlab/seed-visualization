@@ -1,7 +1,14 @@
 ﻿<template>
   <section class="emulator-topology-3d-dock-page">
     <section class="emulator-topology-3d-stats">
-      <el-popover v-model:visible="asPickerVisible" placement="top-start" width="390" trigger="click" popper-class="emulator-topology-3d-filter-popover">
+      <el-popover
+        v-model:visible="asPickerVisible"
+        placement="top-start"
+        width="390"
+        trigger="click"
+        popper-class="emulator-topology-3d-filter-popover"
+        @after-leave="commitPendingAsSelection"
+      >
         <template #reference>
           <button type="button" class="emulator-topology-3d-stat-card">
             <strong>{{ stats.autonomousSystems }}</strong><span>AS</span>
@@ -12,24 +19,24 @@
             <strong>Transit AS</strong>
             <el-switch v-model="showAsDetails" size="small" active-text="Details" />
           </header>
-          <el-select
-            v-model="selectedAsnValues"
+          <el-select-v2
+            v-model="draftAsnValues"
+            :options="asOptions"
             multiple
             filterable
             clearable
             collapse-tags
             collapse-tags-tooltip
+            :teleported="false"
             placeholder="Select AS"
             popper-class="emulator-topology-3d-select-popper"
             style="width: 100%"
-          >
-            <el-option
-              v-for="item in asSummaries"
-              :key="item.asn"
-              :label="`AS-${item.asn} (${item.routers})`"
-              :value="item.asn"
-            />
-          </el-select>
+          />
+          <div class="emulator-topology-3d-picker-actions">
+            <el-button size="small" type="primary" :disabled="!asSelectionChanged" @click="applyAsSelection">
+              Apply AS filter
+            </el-button>
+          </div>
           <div v-if="showAsDetails" class="emulator-topology-3d-as-detail-list">
             <el-popover
               v-for="item in asSummaries"
@@ -55,7 +62,14 @@
           </div>
         </section>
       </el-popover>
-      <el-popover v-model:visible="ixPickerVisible" placement="top-start" width="360" trigger="click" popper-class="emulator-topology-3d-filter-popover">
+      <el-popover
+        v-model:visible="ixPickerVisible"
+        placement="top-start"
+        width="360"
+        trigger="click"
+        popper-class="emulator-topology-3d-filter-popover"
+        @after-leave="commitPendingIxSelection"
+      >
         <template #reference>
           <button type="button" class="emulator-topology-3d-stat-card">
             <strong>{{ stats.ix }}</strong><span>IX</span>
@@ -63,24 +77,24 @@
         </template>
         <section v-if="ixPickerVisible" class="emulator-topology-3d-picker">
           <header><strong>IX networks</strong></header>
-          <el-select
-            v-model="selectedIxNameValues"
+          <el-select-v2
+            v-model="draftIxNameValues"
+            :options="ixOptions"
             multiple
             filterable
             clearable
             collapse-tags
             collapse-tags-tooltip
+            :teleported="false"
             placeholder="Select IX"
             popper-class="emulator-topology-3d-select-popper"
             style="width: 100%"
-          >
-            <el-option
-              v-for="ix in ixSummaries"
-              :key="ix.name"
-              :label="ix.label"
-              :value="ix.name"
-            />
-          </el-select>
+          />
+          <div class="emulator-topology-3d-picker-actions">
+            <el-button size="small" type="primary" :disabled="!ixSelectionChanged" @click="applyIxSelection">
+              Apply IX filter
+            </el-button>
+          </div>
         </section>
       </el-popover>
       <div><strong>{{ stats.networks }}</strong><span>Networks</span></div>
@@ -124,11 +138,15 @@
 
 <script setup lang="ts">
 import { Aim } from '@element-plus/icons-vue'
-import { onDeactivated, ref } from 'vue'
+import { computed, onDeactivated, ref, watch } from 'vue'
 
 const asPickerVisible = ref(false)
 const ixPickerVisible = ref(false)
 const visibleDetailAsn = ref<string>()
+const draftAsnValues = ref<string[]>([])
+const draftIxNameValues = ref<string[]>([])
+let pendingAsnValues: string[] | undefined
+let pendingIxNameValues: string[] | undefined
 onDeactivated(() => {
   asPickerVisible.value = false
   ixPickerVisible.value = false
@@ -142,7 +160,7 @@ import type {
   EmulatorTopologySelectedNodeSummary,
 } from '@/view/map/shared/types/emulatorTopologyDockTypes'
 
-defineProps<{
+const props = defineProps<{
   stats: EmulatorTopologyCommonStats
   asSummaries: EmulatorTopologyAsSummary[]
   ixSummaries: EmulatorTopologyIxSummary[]
@@ -155,6 +173,59 @@ defineProps<{
 const selectedAsnValues = defineModel<string[]>('selectedAsnValues', { required: true })
 const selectedIxNameValues = defineModel<string[]>('selectedIxNameValues', { required: true })
 const showAsDetails = defineModel<boolean>('showAsDetails', { required: true })
+
+const asOptions = computed(() => props.asSummaries.map(item => ({
+  label: `AS-${item.asn} (${item.routers})`,
+  value: item.asn,
+})))
+const ixOptions = computed(() => props.ixSummaries.map(item => ({
+  label: item.label,
+  value: item.name,
+})))
+const asSelectionChanged = computed(() => !sameSelection(draftAsnValues.value, selectedAsnValues.value))
+const ixSelectionChanged = computed(() => !sameSelection(draftIxNameValues.value, selectedIxNameValues.value))
+
+function sameSelection(left: string[], right: string[]) {
+  if (left.length !== right.length) return false
+  const rightValues = new Set(right)
+  return left.every(value => rightValues.has(value))
+}
+
+// Reset before the picker renders, including when reopening a cached dock page.
+watch(asPickerVisible, visible => {
+  if (visible) {
+    draftAsnValues.value = [...selectedAsnValues.value]
+    showAsDetails.value = false
+  }
+  visibleDetailAsn.value = undefined
+}, { flush: 'sync' })
+watch(ixPickerVisible, visible => {
+  if (visible) draftIxNameValues.value = [...selectedIxNameValues.value]
+}, { flush: 'sync' })
+
+function applyAsSelection() {
+  pendingAsnValues = [...draftAsnValues.value]
+  asPickerVisible.value = false
+}
+
+function applyIxSelection() {
+  pendingIxNameValues = [...draftIxNameValues.value]
+  ixPickerVisible.value = false
+}
+
+function commitPendingAsSelection() {
+  if (!pendingAsnValues) return
+  const values = pendingAsnValues
+  pendingAsnValues = undefined
+  selectedAsnValues.value = values
+}
+
+function commitPendingIxSelection() {
+  if (!pendingIxNameValues) return
+  const values = pendingIxNameValues
+  pendingIxNameValues = undefined
+  selectedIxNameValues.value = values
+}
 
 defineEmits<{
   clearTopologyFilters: []
@@ -362,6 +433,11 @@ defineEmits<{
     overflow-wrap: anywhere;
     color: #eaf9ff;
   }
+}
+
+.emulator-topology-3d-picker-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 :global(.emulator-topology-3d-filter-popover),

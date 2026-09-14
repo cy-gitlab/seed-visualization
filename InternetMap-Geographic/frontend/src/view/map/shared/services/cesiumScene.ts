@@ -57,6 +57,8 @@ const LINK_CURVE_HEIGHT_MIN = 120_000
 const LINK_CURVE_HEIGHT_MAX = 1_050_000
 const MAX_AVOIDANCE_SEGMENTS = 220
 const MAX_AVOIDANCE_POINTS = 260
+const LARGE_GRAPH_AVOIDANCE_SEGMENTS = 48
+const LARGE_GRAPH_AVOIDANCE_POINTS = 64
 const AVOIDANCE_PARENT_DISTANCE = 52
 const LABEL_LIMIT_THRESHOLD = 1200
 const LARGE_GRAPH_LABEL_LIMIT = 900
@@ -65,9 +67,14 @@ const LABEL_LIMIT_THRESHOLD_2D = 500
 const LARGE_GRAPH_LABEL_LIMIT_2D = 360
 const HUGE_GRAPH_LABEL_LIMIT_2D = 220
 const LINK_CURVE_SEGMENTS_2D = 14
+const LARGE_GRAPH_LINK_CURVE_SEGMENTS = 12
+const LARGE_GRAPH_LINK_CURVE_SEGMENTS_2D = 6
 const HOVER_PICK_THROTTLE_MS = 100
 const INTERACTION_GRAPH_THRESHOLD = 4000
 const HOVER_PICK_MIN_MOVE_PX = 4
+// Pull screen-space node markers slightly toward the camera. This keeps dense
+// link geometry behind nodes while preserving normal globe/terrain occlusion.
+const NODE_FOREGROUND_EYE_OFFSET = 35_000
 
 type GeoPoint = {
   lat: number
@@ -499,9 +506,11 @@ function getBaseAngle(parent: GlobeNode, node: GlobeNode) {
   return Math.atan2(node.lat - parent.lat, lonDelta)
 }
 
-function createCandidateAngles(parent: GlobeNode, node: GlobeNode) {
+function createCandidateAngles(parent: GlobeNode, node: GlobeNode, largeGraph = false) {
   const baseAngle = getBaseAngle(parent, node)
-  const offsets = [0, 0.22, -0.22, 0.44, -0.44, 0.7, -0.7, 1.0, -1.0, 1.35, -1.35, 1.75, -1.75, Math.PI]
+  const offsets = largeGraph
+    ? [0, 0.44, -0.44, 1.0, -1.0]
+    : [0, 0.22, -0.22, 0.44, -0.44, 0.7, -0.7, 1.0, -1.0, 1.35, -1.35, 1.75, -1.75, Math.PI]
   return offsets.map((offset) => baseAngle + offset)
 }
 
@@ -553,9 +562,16 @@ function chooseAvoidedPoint(
   placedSegments: RenderSegment[],
   placedPoints: GeoPoint[],
   spreadScale: number,
+  largeGraph = false,
 ): GeoPoint {
-  const localSegments = getLocalSegments(parentPoint, placedSegments)
-  const localPoints = getLocalPoints(parentPoint, placedPoints)
+  // Large generated topologies are grouped by parent. Recently placed items
+  // therefore contain the useful siblings and avoid an O(n²) global scan.
+  const localSegments = largeGraph
+    ? placedSegments.slice(-LARGE_GRAPH_AVOIDANCE_SEGMENTS)
+    : getLocalSegments(parentPoint, placedSegments)
+  const localPoints = largeGraph
+    ? placedPoints.slice(-LARGE_GRAPH_AVOIDANCE_POINTS)
+    : getLocalPoints(parentPoint, placedPoints)
   let bestPoint = candidates[0]!
   let bestScore = Number.POSITIVE_INFINITY
 
@@ -574,6 +590,7 @@ function getAvoidedRenderGeos(renderNodes: GlobeNode[], nodeById: Map<string, Gl
   const renderGeos = new Map<string, GeoPoint>()
   const placedSegments: RenderSegment[] = []
   const placedPoints: GeoPoint[] = []
+  const largeGraph = renderNodes.length >= INTERACTION_GRAPH_THRESHOLD
 
   renderNodes.forEach((node) => {
     if (!node.parentId) {
@@ -606,8 +623,9 @@ function getAvoidedRenderGeos(renderNodes: GlobeNode[], nodeById: Map<string, Gl
       if (!parent) return
 
       const parentPoint = renderGeos.get(parent.id) ?? { lat: parent.lat, lon: parent.lon }
-      const candidates = createCandidateAngles(parent, node).map((angle) => makeSpreadPoint(parent, node, angle, spreadScale))
-      const point = chooseAvoidedPoint(candidates, parentPoint, placedSegments, placedPoints, spreadScale)
+      const candidates = createCandidateAngles(parent, node, largeGraph)
+        .map((angle) => makeSpreadPoint(parent, node, angle, spreadScale))
+      const point = chooseAvoidedPoint(candidates, parentPoint, placedSegments, placedPoints, spreadScale, largeGraph)
 
       renderGeos.set(node.id, point)
       placedSegments.push({ from: parentPoint, to: point })
@@ -620,6 +638,10 @@ function getAvoidedRenderGeos(renderNodes: GlobeNode[], nodeById: Map<string, Gl
 function getRenderPosition(node: GlobeNode, renderGeos: Map<string, GeoPoint>, nodeScale: number) {
   const point = renderGeos.get(node.id) ?? { lat: node.lat, lon: node.lon }
   return Cartesian3.fromDegrees(point.lon, point.lat, getRenderHeight(node, nodeScale))
+}
+
+function getNodeEyeOffset(nodeScale: number) {
+  return new Cartesian3(0, 0, -NODE_FOREGROUND_EYE_OFFSET * Math.min(nodeScale, 3))
 }
 
 function getRenderGeoPoint(node: GlobeNode, renderGeos: Map<string, GeoPoint>) {
@@ -988,11 +1010,14 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     const showRouterLabels = options.showRouterLabels ?? true
     const showNodeLabels = options.showNodeLabels ?? true
     const pointScale = clampNodeScale(nodeScale)
+    const nodeEyeOffset = getNodeEyeOffset(pointScale)
     const spreadScale = pointScale * LINK_SPREAD_MULTIPLIER
     const renderNodes = graph.nodes.filter((node) => shouldRenderRouterNode(node, expandedRouterParentIds))
     const visibleRenderNodes = renderNodes.filter(node => isTopologyNodeVisible(node, options))
     const renderLabelIds = selectRenderableLabelIds(visibleRenderNodes, showRouterLabels, showNodeLabels, is2DMode)
-    const linkCurveSegments = is2DMode ? LINK_CURVE_SEGMENTS_2D : LINK_CURVE_SEGMENTS
+    const linkCurveSegments = largeGraph
+      ? is2DMode ? LARGE_GRAPH_LINK_CURVE_SEGMENTS_2D : LARGE_GRAPH_LINK_CURVE_SEGMENTS
+      : is2DMode ? LINK_CURVE_SEGMENTS_2D : LINK_CURVE_SEGMENTS
 
     const nodeById = new Map(renderNodes.map((node) => [node.id, node]))
     const renderGeos = reuse ? lastRenderGeos : getAvoidedRenderGeos(renderNodes, nodeById, spreadScale)
@@ -1050,6 +1075,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
           outlineColor: SEARCH_HIGHLIGHT_OUTLINE_COLOR.withAlpha(0.96),
           outlineWidth: getSearchHaloOutlineWidth(pointScale),
           scaleByDistance: new NearFarScalar(1_500_000, 1.25, 18_000_000, 0.62),
+          eyeOffset: nodeEyeOffset,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         }, node.topologyType ?? 'other', nodeVisible)
       }
@@ -1062,6 +1088,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
             width: getNodeSize(node) * pointScale,
             height: getNodeSize(node) * pointScale,
             verticalOrigin: VerticalOrigin.CENTER,
+            eyeOffset: nodeEyeOffset,
             scaleByDistance: new NearFarScalar(1_500_000, node.highlighted ? 1.35 : 1.18, 18_000_000, node.highlighted ? 0.72 : 0.58),
           }, nodeVisible)
           nodePrimitives.set(node.id, { primitive: billboard, billboard: true })
@@ -1077,6 +1104,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
             width: getNodeSize(node) * pointScale,
             height: getNodeSize(node) * pointScale,
             verticalOrigin: VerticalOrigin.CENTER,
+            eyeOffset: nodeEyeOffset,
             scaleByDistance: new NearFarScalar(1_500_000, node.highlighted ? 1.4 : 1.16, 18_000_000, node.highlighted ? 0.72 : 0.52),
           }, nodeVisible)
           nodePrimitives.set(node.id, { primitive, billboard: true })
@@ -1088,6 +1116,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
             color: getNodeFillColor(node),
             outlineColor: getNodeOutlineColor(node),
             outlineWidth: getNodeOutlineWidth(node, pointScale),
+            eyeOffset: nodeEyeOffset,
             scaleByDistance: new NearFarScalar(1_500_000, node.highlighted ? 1.5 : 1.25, 18_000_000, node.highlighted ? 0.72 : 0.58),
           }, nodeVisible)
           nodePrimitives.set(node.id, { primitive, billboard: false })
@@ -1105,6 +1134,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
           style: LabelStyle.FILL_AND_OUTLINE,
           verticalOrigin: VerticalOrigin.BOTTOM,
           pixelOffset: getLabelOffset(node, pointScale),
+          eyeOffset: nodeEyeOffset,
           heightReference: HeightReference.NONE,
           scaleByDistance: new NearFarScalar(1_500_000, node.highlighted ? 1.15 : 1, 14_000_000, node.highlighted ? 0.36 : node.kind === 'star' ? 0.35 : 0.18),
         }, node.topologyType ?? 'other', nodeVisible)
@@ -1169,6 +1199,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
       color: HIGHLIGHT_COLOR.withAlpha(0.82),
       outlineColor: HIGHLIGHT_OUTLINE_COLOR,
       outlineWidth: 4,
+      eyeOffset: getNodeEyeOffset(lastPointScale),
       scaleByDistance: new NearFarScalar(1_500_000, 1.25, 18_000_000, 0.52),
     })
     flashPointByNodeId.set(nodeId, point)

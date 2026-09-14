@@ -1,4 +1,4 @@
-# InternetMap-Geographic 功能基线验证
+# E00_mini_internet 基本功能测试
 
 ## 验证目的与范围
 
@@ -6,7 +6,9 @@
 
 这里记录的是操作步骤和预期结果，不代表已经完成实测。压力上限、长期稳定性和大规模蠕虫传播应在其他示例验证。
 
-> 当前 `emulator/large-internet.py` 仍沿用原示例：包含多个 AS、10 个 IX，入口为 `run(hosts_per_as=5)`，并使用 `morris-worm-base` 镜像。它是相对于万级节点的基线拓扑，并非十几个节点的极小拓扑；最终规模以生成文件和实际 API 数据为准。本示例不执行蠕虫攻击，也不需要关闭 ASLR。脚本启动的历史服务不作为本次验收对象。
+本例使用同目录的 [mini_internet.py](./mini_internet.py)。默认包含 17 个 AS（5 个 transit AS、12 个 stub AS）、6 个 IX、27 个 router、25 个 host（每个 stub AS 2 个，加上 AS154 的 `host_new`），共 58 个仿真节点容器，其中包括 6 个 IX route-server 容器。可视化等辅助服务不计入此数量。
+
+地图上的 **star 是 IX 的 peering 网络，不是容器**。每个 star 有对应的真实 IX route-server 容器；两者分别设置坐标，便于在地图上区分。router 和 host 使用周边地区的城市坐标，布局用于功能展示，不代表真实 AS 的物理部署。
 
 ## 1. 环境准备与启动
 
@@ -17,18 +19,20 @@
 从仓库根目录执行：
 
 ```bash
-cd InternetMap-Geographic/examples/basic_functions/emulator
-python large-internet.py
+cd InternetMap-Geographic/examples/E00_mini_internet
+python mini_internet.py
 ```
 
-默认生成 AMD64 配置；ARM64 主机使用 `python large-internet.py arm`。输出位于 `emulator/demo_output/`，包含 `docker-compose.yml`。脚本使用覆盖模式生成，已有实验需要先保存生成文件和记录。
+默认生成 AMD64 配置；ARM64 主机使用 `python mini_internet.py --platform arm`。默认输出位于本例的 `output/`，包含 `docker-compose.yml`。脚本默认覆盖输出目录，已有实验需要先保存生成文件和记录；使用 `--no-override` 可禁止覆盖。
+
+基本功能测试建议保持默认 `--hosts-per-as 2`。可通过 `--output <目录>` 更改输出路径。`--dumpfile` 只保存模拟器对象，不生成 Compose；本流程应执行完整渲染，不使用 `--skip-render`。
 
 ### 1.2 构建并启动仿真容器
 
 继续在上述目录执行：
 
 ```bash
-cd demo_output
+cd output
 DOCKER_BUILDKIT=0 docker compose build
 docker compose up -d
 docker compose ps
@@ -44,7 +48,7 @@ docker compose ps
 docker compose up -d --build seedemu_emulator_service seedemu_internet_map_geographic seedmu_traffic_observer_service
 ```
 
-实时拓扑的 Docker API 与抓包服务应观察同一套仿真容器。默认 Compose 使用本机 Docker socket，建议在同一台 Linux 主机运行。生成器还附带一个使用 8080 端口的旧版地图容器；本次验收统一访问 8090，避免同时启动其他占用 8080 的部署。
+实时拓扑的 Docker API 与抓包服务应观察同一套仿真容器。默认 Compose 使用本机 Docker socket，建议在同一台 Linux 主机运行。本次验收统一访问 8090；若所用 SEED Emulator 版本默认生成了占用 8080 端口的内置地图服务，注意避免端口冲突。
 
 | 模式 | 访问地址 |
 | --- | --- |
@@ -53,7 +57,7 @@ docker compose up -d --build seedemu_emulator_service seedemu_internet_map_geogr
 | 上传 3D | `http://<ip>:8090/pro/upload/3d` |
 | 上传 2D | `http://<ip>:8090/pro/upload/2d` |
 
-`<ip>` 为可视化服务主机 IP。浏览器在另一台机器上时，上传前需将生成的 `demo_output/docker-compose.yml` 复制到浏览器所在机器。
+`<ip>` 为可视化服务主机 IP。浏览器在另一台机器上时，上传前需将本例生成的 `output/docker-compose.yml` 复制到浏览器所在机器。
 
 ## 2. 固定验证数据
 
@@ -62,7 +66,26 @@ docker compose up -d --build seedemu_emulator_service seedemu_internet_map_geogr
 3. 选择一个实际存在的 IX 和一台路由器，用于筛选和详情验证。
 4. 初始状态恢复为未选择 AS/IX、搜索为空；记录节点类型开关、标签开关及显示的节点/链路数量。
 
-不要写死宿主机 IP 或假定主机地址。可在 `demo_output` 中运行 `docker compose ps` 查找容器，在页面详情或容器中确认 IP。
+建议选择 AS150 与 AS171 的 host 作为 A、B，以覆盖跨 IX 通信。不要写死宿主机 IP 或假定主机地址。可在 `output` 中运行 `docker compose ps` 查找容器，在页面详情或容器中确认 IP。
+
+### 2.1 地理位置基线
+
+各网络和容器通过 `org.seedsecuritylabs.seedemu.meta.geo.lat`、`org.seedsecuritylabs.seedemu.meta.geo.lon` 标签提供六位小数的经纬度。star 与 IX 容器的位置如下：
+
+| IX | star 所在城市 | IX 容器展示城市 | 两者约距 |
+| --- | --- | --- | --- |
+| 100 | 纽约 | 费城 | 130 km |
+| 101 | 圣何塞 | 圣罗莎 | 142 km |
+| 102 | 芝加哥 | 罗克福德 | 129 km |
+| 103 | 迈阿密 | 西棕榈滩 | 107 km |
+| 104 | 波士顿 | 伍斯特 | 62 km |
+| 105 | 休斯敦 | 亨茨维尔（得克萨斯州） | 108 km |
+
+router 距所属 star 约 78–976 km，host 距所属 router 约 67–270 km。预设位置选择非沙漠地区的陆地城市，避开海洋和极地。默认 6 个 star 与 58 个容器坐标互不重合；屏幕上的图标是否遮挡还取决于缩放级别和图标大小。
+
+每个 stub AS 预设 3 个 host 城市，超出后会复用坐标；AS154 的 `host_new` 也占用一个位置。因此增加 `--hosts-per-as` 后不再要求全部 host 坐标互不重合。
+
+修改脚本坐标后，需要重新生成 Compose，并在实时模式更新对应容器，或在上传模式重新解析新文件，才能验证新布局。
 
 ## 3. 拓扑与页面功能
 
@@ -78,6 +101,9 @@ docker compose up -d --build seedemu_emulator_service seedemu_internet_map_geogr
 | B06 | AS/IX 筛选 | 在 Overview 打开 AS/IX 选择器，分别测试单选、多选和清空 | 展示符合条件的节点及关系；清空后恢复；测试单一筛选时先清除另一项筛选 |
 | B07 | 类型与标签 | 在 Settings 切换 Host、Router、Network、IX、标签和 Hover details，调整大小 | 可见性和详情随设置变化；关闭 Router 时 Network 受依赖限制；关闭 Network 时链路隐藏，恢复后可重新显示 |
 | B08 | 面板布局 | 切换 Overview、Settings、Traffic Replay；最小化再展开；检查 1920×1080、1366×768 和较小窗口 | 当前页签内容正确，按钮可点击；面板边缘未被裁切，较长内容可滚动访问 |
+| B22 | star 与 IX 容器区分 | 开启相关节点和网络显示，逐个检查 6 个 star 及对应 IX 容器；放大并查看详情 | star 表示 IX 网络，IX 容器具有独立身份；位置符合 2.1 节，二者不共用坐标；拓扑连接保持正确 |
+| B23 | 地理位置与分组 | 检查各 IX、router、host（含 AS154 的 `host_new`），缩放到地区和城市级别 | 节点落在预设陆地城市，不在海洋、沙漠或极地；router 与所属 star、host 与所属 router 的关联正确；默认配置坐标不重合 |
+| B24 | 实时与上传坐标一致性 | 使用同一次生成且已部署的 Compose，分别查看实时和上传页面中的相同网络、容器 | 相同对象使用相同经纬度；IX 容器的展示偏移在两种数据来源下均生效；刷新或重新解析不随机改变位置 |
 
 实时页面读取运行中的容器，上传页面读取 Compose 定义。若存在未启动服务或显示开关不同，不能仅凭两者总数不同判失败，应按节点身份和输入数据解释差异。
 
@@ -140,7 +166,7 @@ docker exec <A_CONTAINER> ping -c 20 -i 1 <B_IP>
 
 ```bash
 # 从仓库根目录进入
-cd InternetMap-Geographic/examples/basic_functions/emulator/demo_output
+cd InternetMap-Geographic/examples/E00_mini_internet/output
 docker compose down
 ```
 

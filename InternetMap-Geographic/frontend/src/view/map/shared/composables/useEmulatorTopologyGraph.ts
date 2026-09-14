@@ -100,7 +100,7 @@ export function useEmulatorTopologyGraph(options: EmulatorTopologyGraphControlle
   const searchHighlightedNodeIds = ref<Set<string>>(new Set())
   const selectedAsns = ref<Set<string>>(new Set())
   const selectedIxNames = ref<Set<string>>(new Set())
-  const showAsDetails = ref(true)
+  const showAsDetails = ref(false)
   const expandedParentIds = ref<string[]>([])
   const selectedNode = ref<GlobeNode>()
   const stats = ref<EmulatorTopologyStats>({ ...emptyStats })

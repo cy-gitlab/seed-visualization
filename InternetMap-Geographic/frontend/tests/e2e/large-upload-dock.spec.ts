@@ -44,11 +44,89 @@ test('10k upload keeps dock tabs responsive', async ({ page }, testInfo) => {
     await route.fulfill({ response, body: instrumented });
   });
   await page.goto('/dev/upload/3d');
-  await page.locator('input[type=file]').setInputFiles(path.resolve('../examples/large-internet-10k/docker-compose-10k.yml'));
+  await page.locator('input[type=file]').setInputFiles(path.resolve('../examples/E01_large_internet_10k/docker-compose-10k-with-geo.yml'));
+  const uploadStartedAt = Date.now();
   await page.getByRole('button', { name: 'Parse file', exact: true }).click();
   const dock = page.getByTestId('emulator-topology-3d-dock');
   await expect(dock).toBeVisible({ timeout: 120_000 });
   await expect(page.locator('.emulator-topology-loading-overlay')).toHaveCount(0, { timeout: 120_000 });
+  const uploadLoadingMs = Date.now() - uploadStartedAt;
+  await testInfo.attach('upload-loading-time-ms', { body: String(uploadLoadingMs), contentType: 'text/plain' });
+  console.log('10k upload loading time (ms):', uploadLoadingMs);
+  const pickerTimings: Record<string, number> = {};
+  const beforePickers = await page.evaluate(() => ({
+    updates: (window as any).__dockMetrics.graphUpdates,
+    clears: (window as any).__dockMetrics.topologyClears,
+  }));
+  for (const name of ['AS', 'IX', 'AS']) {
+    const card = dock.locator('.emulator-topology-3d-stat-card').filter({ has: page.getByText(name, { exact: true }) });
+    const elapsed = await card.evaluate(async element => {
+      const start = performance.now();
+      (element as HTMLButtonElement).click();
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      return performance.now() - start;
+    });
+    pickerTimings[`${name}-${Object.keys(pickerTimings).length}`] = elapsed;
+    const picker = page.locator('.emulator-topology-3d-picker:visible');
+    await expect(picker).toBeVisible();
+    if (name === 'AS') {
+      await expect(picker.getByRole('switch')).not.toBeChecked();
+      await expect(picker.locator('.emulator-topology-3d-as-detail-list')).toHaveCount(0);
+    }
+    await picker.locator('.el-select').click();
+    const options = page.locator('.emulator-topology-3d-select-popper:visible [role=option]');
+    await expect(options.first()).toBeVisible();
+    expect(await options.count()).toBeLessThan(30);
+    await picker.getByRole('combobox').press('Escape');
+    await expect(options).toHaveCount(0);
+    // Explicitly enable Details once to verify that reopening resets it.
+    if (name === 'AS' && Object.keys(pickerTimings).length === 1) {
+      await picker.locator('.el-switch').click();
+      await expect(picker.getByRole('switch')).toBeChecked();
+    }
+    await card.click();
+    await expect(picker).toHaveCount(0);
+    expect(elapsed).toBeLessThan(1000);
+  }
+  expect(await page.evaluate(() => ({
+    updates: (window as any).__dockMetrics.graphUpdates,
+    clears: (window as any).__dockMetrics.topologyClears,
+  }))).toEqual(beforePickers);
+
+  for (const filter of [
+    { card: 'AS', button: 'Apply AS filter' },
+    { card: 'IX', button: 'Apply IX filter' },
+  ]) {
+    const card = dock.locator('.emulator-topology-3d-stat-card').filter({ has: page.getByText(filter.card, { exact: true }) });
+    await card.click();
+    const picker = page.locator('.emulator-topology-3d-picker:visible');
+    await picker.locator('.el-select').click();
+    const options = page.locator('.emulator-topology-3d-select-popper:visible [role=option]');
+    await expect(options.first()).toBeVisible();
+    const updatesBeforeSelection = await page.evaluate(() => (window as any).__dockMetrics.graphUpdates);
+    await options.first().click();
+    await page.waitForTimeout(300);
+    await expect(picker).toBeVisible();
+    await picker.getByRole('combobox').press('Escape');
+    expect(await page.evaluate(() => (window as any).__dockMetrics.graphUpdates)).toBe(updatesBeforeSelection);
+
+    const filterPopover = page.locator('.emulator-topology-3d-filter-popover:visible');
+    await picker.getByRole('button', { name: filter.button, exact: true }).click();
+    await expect(filterPopover).toHaveCount(0);
+    await page.waitForFunction(updates => (window as any).__dockMetrics.graphUpdates > updates, updatesBeforeSelection);
+    await expect(page.locator('.emulator-topology-loading-overlay')).toHaveCount(0, { timeout: 120_000 });
+
+    const updatesBeforeClear = await page.evaluate(() => (window as any).__dockMetrics.graphUpdates);
+    await dock.getByRole('button', { name: 'Clear topology filters', exact: true }).click();
+    await page.waitForFunction(
+      updates => (window as any).__dockMetrics.graphUpdates > updates,
+      updatesBeforeClear,
+      { timeout: 120_000 },
+    );
+    await expect(page.locator('.emulator-topology-loading-overlay')).toHaveCount(0, { timeout: 120_000 });
+  }
+  await testInfo.attach('stat-card-open-times-ms', { body: JSON.stringify(pickerTimings), contentType: 'application/json' });
+  console.log('10k AS/IX card open times (ms):', pickerTimings);
   const timings: Record<string, number> = {};
   await page.evaluate(() => { (window as any).__dockMetrics.longTasks = []; });
   for (let round = 0; round < 2; round++) {
@@ -61,6 +139,26 @@ test('10k upload keeps dock tabs responsive', async ({ page }, testInfo) => {
     }
   }
   await dock.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settingsPage = dock.locator('.emulator-topology-3d-settings-page');
+  const scaleHandle = settingsPage.locator('.el-slider__button-wrapper');
+  for (const position of ['0%', '100%']) {
+    await scaleHandle.evaluate((element, left) => { (element as HTMLElement).style.left = left; }, position);
+    const bounds = await page.evaluate(() => {
+      const pageElement = document.querySelector('.emulator-topology-3d-settings-page')!;
+      const button = pageElement.querySelector('.el-slider__button')!;
+      const pageRect = pageElement.getBoundingClientRect();
+      const buttonRect = button.getBoundingClientRect();
+      return {
+        buttonLeft: buttonRect.left,
+        buttonRight: buttonRect.right,
+        pageLeft: pageRect.left,
+        pageRight: pageRect.right,
+      };
+    });
+    expect(bounds.buttonLeft).toBeGreaterThanOrEqual(bounds.pageLeft);
+    expect(bounds.buttonRight).toBeLessThanOrEqual(bounds.pageRight);
+  }
+  await expect.poll(() => settingsPage.evaluate(element => getComputedStyle(element).overflowX)).toBe('hidden');
   const beforeVisibility = await page.evaluate(() => ({
     updates: (window as any).__dockMetrics.graphUpdates,
     visibilityUpdates: (window as any).__dockMetrics.visibilityUpdates,

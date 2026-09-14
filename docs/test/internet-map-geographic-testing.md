@@ -46,7 +46,7 @@ Playwright 将 HTML 报告输出到 `playwright-report/`；CI 上传为 `interne
 pnpm exec playwright test large-upload-dock scene-interaction --workers=1
 ```
 
-`large-upload-dock.spec.ts` 上传示例中的 `docker-compose-10k.yml`，等待首帧完成，再连续切换 Settings、Traffic Replay、Overview 两轮。测试使用真实 Cesium 和 Chromium 软件 WebGL，验证页签状态更新及切换期间没有调用拓扑重建。为避免外部瓦片服务影响结果，测试屏蔽卫星瓦片请求。
+`large-upload-dock.spec.ts` 上传 `InternetMap-Geographic/examples/E01_large_internet_10k/docker-compose-10k-with-geo.yml`，等待首帧完成，再连续切换 Settings、Traffic Replay、Overview 两轮。测试使用真实 Cesium 和 Chromium 软件 WebGL，验证页签状态更新及切换期间没有调用拓扑重建。为避免外部瓦片服务影响结果，测试屏蔽卫星瓦片请求。完整人工压力步骤见该示例目录的 `README.md`。
 
 HTML 报告附件包含自动点击耗时、点击事件到 DOM 更新及下一次动画帧回调的耗时和主线程长任务。自动点击耗时包含 Playwright 等待；动画帧回调也不等于屏幕实际显示时间。软件渲染结果用于回归对比，不能替代目标机器上使用 GPU 的交互实测。
 

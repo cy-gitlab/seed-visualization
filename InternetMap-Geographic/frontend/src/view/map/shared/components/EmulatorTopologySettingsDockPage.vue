@@ -1,5 +1,5 @@
 ﻿<template>
-  <section class="emulator-topology-3d-dock-page">
+  <section class="emulator-topology-3d-dock-page emulator-topology-3d-settings-page">
     <div class="emulator-topology-3d-search">
       <el-autocomplete
         v-model="keyword"
@@ -113,12 +113,13 @@ const hostVisible = computed({
 </script>
 
 <style scoped lang="scss">
-.emulator-topology-3d-dock-page {
+.emulator-topology-3d-dock-page.emulator-topology-3d-settings-page {
   flex: 1 1 auto;
   display: grid;
   gap: 12px;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .emulator-topology-3d-search {
@@ -209,12 +210,21 @@ const hostVisible = computed({
 .emulator-topology-3d-field {
   display: grid;
   gap: 8px;
+  min-width: 0;
 
   > span {
     color: rgba(237, 247, 255, 0.88);
     font-size: 12px;
     font-weight: 700;
   }
+}
+
+:deep(.el-slider) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding-right: 10px;
+  padding-left: 10px;
 }
 
 .emulator-topology-3d-label-toggle {
