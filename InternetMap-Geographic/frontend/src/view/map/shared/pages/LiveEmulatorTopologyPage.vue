@@ -31,6 +31,11 @@ const LIVE_PACKET_FLASH_INTERVAL_MS = 180
 const LIVE_PACKET_FLASH_DURATION_MS = 420
 const LIVE_PACKET_HOP_DELAY_MS = 80
 const LIVE_PACKET_ANIMATION_QUEUE_LIMIT = 96
+const MAX_RECORDED_PACKET_EVENTS = 100_000
+const MAX_CONSECUTIVE_FLOW_FAILURES = 6
+const FLOW_FAILURE_GRACE_MS = 15_000
+const LIVE_FLOW_ANALYSIS_TIMEOUT_MS = 3_000
+const REPLAY_FLOW_ANALYSIS_TIMEOUT_MS = 10_000
 
 type PacketReplayTimingMode = 'interval' | 'timeline'
 type LivePacketAnimationJob = {
@@ -91,6 +96,13 @@ let liveFlowIdleTimerId: number | undefined
 let liveVisualizationSuspended = false
 let liveFlowAnalysisGeneration = 0
 let packetReplayFlowAnalysisGeneration = 0
+let liveFlowAnalysisRunning = false
+let liveFlowAnalysisPending = false
+let packetReplayFlowAnalysisRunning = false
+let packetReplayFlowAnalysisPending = false
+let pendingPacketReplayEvents: EmulatorTopologyPacketReplayEvent[] = []
+let consecutiveLiveFlowFailures = 0
+let liveFlowFailureStartedAtMs = 0
 const packetFlowWorker = new PacketFlowWorkerClient()
 
 const {
@@ -140,6 +152,9 @@ const {
   },
   orientToNode: (nodeId) => globeRef.value?.orientToNode(nodeId),
 })
+const packetFlowTopologyEdges = computed(() =>
+  baseGraph.value.edges.map(({ from, to }) => ({ from, to })),
+)
 const packetReplayProgress = computed({
   get: () => packetReplayIndex.value,
   set: (value: number) => showPacketReplayEventAt(Number(value)),
@@ -374,9 +389,19 @@ async function handleLivePacket(packet: EmulatorTopologyPacketReplayEvent) {
     packetReplayIndex.value = packetReplayTimingMode.value === 'timeline'
       ? packetReplayEvents.value.length
       : packetReplayPlaylist.value.length || packetReplayEvents.value.length
-    packetReplayStatus.value = flowAnimationEnabled.value
-      ? `Recording live flow: ${packetReplayFlowPath.value.length.toLocaleString()} flow steps from ${packetReplayEvents.value.length.toLocaleString()} packets.`
-      : `Recording live packets: ${packetReplayEvents.value.length.toLocaleString()} captured.`
+    if (packetReplayEvents.value.length >= MAX_RECORDED_PACKET_EVENTS) {
+      packetRecordingEnabled.value = false
+      packetReplayStatus.value = `Recording stopped at the ${MAX_RECORDED_PACKET_EVENTS.toLocaleString()} packet limit. Clear the recording before starting again.`
+      ElMessage.warning({
+        message: `Recording reached the ${MAX_RECORDED_PACKET_EVENTS.toLocaleString()} packet limit and was stopped.`,
+        duration: 15_000,
+        showClose: true,
+      })
+    } else {
+      packetReplayStatus.value = flowAnimationEnabled.value
+        ? `Recording live flow: ${packetReplayFlowPath.value.length.toLocaleString()} flow steps from ${packetReplayEvents.value.length.toLocaleString()} packets.`
+        : `Recording live packets: ${packetReplayEvents.value.length.toLocaleString()} captured.`
+    }
   } else {
     packetReplayStatus.value = flowAnimationEnabled.value
       ? `Live capture active. Click record to save packets for replay. Current live flow has ${liveFlowPath.value.length.toLocaleString()} steps.`
@@ -395,9 +420,28 @@ function resetLiveFlowState() {
   liveFlowPath.value = []
   liveFlowSegments.value = []
   liveFlowPathSteps.value = []
+  liveFlowAnalysisPending = false
+  consecutiveLiveFlowFailures = 0
+  liveFlowFailureStartedAtMs = 0
 }
 
 async function rebuildLiveFlowFromEvents() {
+  if (liveFlowAnalysisRunning) {
+    liveFlowAnalysisPending = true
+    return
+  }
+  liveFlowAnalysisRunning = true
+  try {
+    do {
+      liveFlowAnalysisPending = false
+      await runLiveFlowAnalysis()
+    } while (liveFlowAnalysisPending && flowAnimationEnabled.value)
+  } finally {
+    liveFlowAnalysisRunning = false
+  }
+}
+
+async function runLiveFlowAnalysis() {
   if (!liveFlowEvents.value.length) {
     liveFlowPath.value = []
     liveFlowSegments.value = []
@@ -407,23 +451,54 @@ async function rebuildLiveFlowFromEvents() {
   }
 
   const generation = ++liveFlowAnalysisGeneration
-  const result = await packetFlowWorker.analyze(liveFlowEvents.value, { appendDestinationEndpoint: false }, 300)
+  const result = await packetFlowWorker.analyze(liveFlowEvents.value, {
+    appendDestinationEndpoint: false,
+    topologyEdges: packetFlowTopologyEdges.value,
+  }, LIVE_FLOW_ANALYSIS_TIMEOUT_MS)
   if (generation !== liveFlowAnalysisGeneration) return
   if (result.status === 'unresolved') {
     liveFlowPath.value = []
     liveFlowSegments.value = []
     liveFlowPathSteps.value = []
     refreshDisplayGraph()
+    recordLiveFlowFailure(result.reason)
     return
   }
 
   const liveAnalysis = result.analysis
   const liveSegments = buildLiveFlowSegmentsWithObservedDestinations(liveAnalysis.pathSteps)
+  if (!liveSegments.length) {
+    recordLiveFlowFailure('The computed path did not match its source, destination, or topology links.')
+    return
+  }
+  consecutiveLiveFlowFailures = 0
+  liveFlowFailureStartedAtMs = 0
   logComputedPacketFlowPath('live', liveSegments)
   liveFlowPath.value = uniquePathNodes(liveSegments.flat())
   liveFlowSegments.value = liveSegments
   liveFlowPathSteps.value = liveAnalysis.pathSteps
   refreshDisplayGraph()
+}
+
+function recordLiveFlowFailure(reason: string) {
+  if (!flowAnimationEnabled.value) return
+  const now = Date.now()
+  if (consecutiveLiveFlowFailures === 0) liveFlowFailureStartedAtMs = now
+  consecutiveLiveFlowFailures += 1
+  if (
+    consecutiveLiveFlowFailures < MAX_CONSECUTIVE_FLOW_FAILURES ||
+    now - liveFlowFailureStartedAtMs < FLOW_FAILURE_GRACE_MS
+  ) return
+
+  flowAnimationEnabled.value = false
+  clearLivePacketAnimationQueues()
+  globeRef.value?.clearPacketAnimations()
+  packetReplayStatus.value = 'Flow animation was disabled after repeated path-analysis failures. Live packets will use node highlights.'
+  ElMessage.warning({
+    message: `Flow animation was disabled because packet paths could not be resolved repeatedly. ${reason}`,
+    duration: 15_000,
+    showClose: true,
+  })
 }
 
 function pruneStaleLiveFlows(nowMs: number) {
@@ -718,7 +793,7 @@ function flashLivePacketJobs(jobs: LivePacketAnimationJob[]) {
 
   jobs.forEach((job) => {
     if (job.mode === 'path' && job.pathNodeIds.length > 1) {
-      logLivePacketPath(job.pathNodeIds, job.event)
+      // logLivePacketPath(job.pathNodeIds, job.event)
       packetPaths.push(job.pathNodeIds)
     } else {
       job.pathNodeIds.forEach((nodeId) => highlightedNodeIds.add(nodeId))
@@ -738,16 +813,16 @@ function clearLivePacketAnimationQueues() {
   livePacketAnimationQueue.splice(0)
 }
 
-function logLivePacketPath(pathNodeIds: string[], event: EmulatorTopologyPacketReplayEvent) {
-  if (!import.meta.env.DEV) return
-  console.debug(`[packet live] ${pathNodeIds.map(getGraphNodeLabel).join(' -> ')}`, {
-    protocol: event.ipProtocol || event.ipProtocolNumber || '-',
-    packetRole: event.packetRole || '-',
-    packetKind: event.packetKind || '-',
-    sourceIp: event.sourceIp || '-',
-    destIp: event.destIp || '-',
-  })
-}
+// function logLivePacketPath(pathNodeIds: string[], event: EmulatorTopologyPacketReplayEvent) {
+//   if (!import.meta.env.DEV) return
+//   console.debug(`[packet live] ${pathNodeIds.map(getGraphNodeLabel).join(' -> ')}`, {
+//     protocol: event.ipProtocol || event.ipProtocolNumber || '-',
+//     packetRole: event.packetRole || '-',
+//     packetKind: event.packetKind || '-',
+//     sourceIp: event.sourceIp || '-',
+//     destIp: event.destIp || '-',
+//   })
+// }
 
 function getCompleteLiveFlowPathForPacket(event: EmulatorTopologyPacketReplayEvent) {
   const flowKey = event.flowId
@@ -768,7 +843,11 @@ function buildLiveFlowSegmentsWithObservedDestinations(steps: PacketFlowPathStep
   })
 
   return Array.from(stepsByFlow.values())
-    .map((flowSteps) => appendObservedDestinationEndpoint(pathFromLiveFlowSteps(flowSteps), flowSteps[flowSteps.length - 1]?.event))
+    .map((flowSteps) => {
+      const event = flowSteps[flowSteps.length - 1]?.event
+      const path = appendObservedDestinationEndpoint(pathFromLiveFlowSteps(flowSteps), event)
+      return event && isCompleteGraphFlowPath(path, event) ? path : []
+    })
     .filter((segment) => segment.length > 0)
 }
 
@@ -804,6 +883,27 @@ function hasGraphEdge(leftNodeId: string, rightNodeId: string) {
   return baseGraph.value.edges.some((edge) =>
     edge.from === leftNodeId && edge.to === rightNodeId ||
     edge.from === rightNodeId && edge.to === leftNodeId,
+  )
+}
+
+function isCompleteGraphFlowPath(pathNodeIds: string[], event: EmulatorTopologyPacketReplayEvent) {
+  if (pathNodeIds.length < 2) return false
+  const sourceNodeId = resolveGraphNodeId(event.sourceContainerId, event.sourceContainerName, event.sourceNodeName, event.sourceNodeIp)
+  const destNodeId = resolveGraphNodeId(event.destContainerId, event.destContainerName, event.destNodeName, event.destNodeIp)
+  if (!sourceNodeId || !destNodeId) return false
+  if (pathNodeIds[0] !== sourceNodeId || pathNodeIds[pathNodeIds.length - 1] !== destNodeId) return false
+  return pathNodeIds.every((nodeId, index) => index === 0 || hasGraphEdge(pathNodeIds[index - 1]!, nodeId))
+}
+
+function areComputedFlowSegmentsValid(
+  segments: string[][],
+  events: EmulatorTopologyPacketReplayEvent[],
+) {
+  const forwardEvents = events.filter((event) => !(
+    event.ipProtocol?.toLowerCase() === 'icmp' && event.packetRole?.toLowerCase() === 'reply'
+  ))
+  return segments.length > 0 && segments.every((segment) =>
+    forwardEvents.some((event) => isCompleteGraphFlowPath(segment, event)),
   )
 }
 
@@ -1077,8 +1177,27 @@ function getPacketTimestampMs(event: EmulatorTopologyPacketReplayEvent) {
 }
 
 async function rebuildPacketReplayFlow(events: EmulatorTopologyPacketReplayEvent[]) {
+  pendingPacketReplayEvents = events
+  if (packetReplayFlowAnalysisRunning) {
+    packetReplayFlowAnalysisPending = true
+    return
+  }
+  packetReplayFlowAnalysisRunning = true
+  try {
+    do {
+      packetReplayFlowAnalysisPending = false
+      await runPacketReplayFlowAnalysis(pendingPacketReplayEvents)
+    } while (packetReplayFlowAnalysisPending && flowAnimationEnabled.value)
+  } finally {
+    packetReplayFlowAnalysisRunning = false
+  }
+}
+
+async function runPacketReplayFlowAnalysis(events: EmulatorTopologyPacketReplayEvent[]) {
   const generation = ++packetReplayFlowAnalysisGeneration
-  const result = await packetFlowWorker.analyze(events, {}, 800)
+  const result = await packetFlowWorker.analyze(events, {
+    topologyEdges: packetFlowTopologyEdges.value,
+  }, REPLAY_FLOW_ANALYSIS_TIMEOUT_MS)
   if (generation !== packetReplayFlowAnalysisGeneration) return
   if (result.status === 'unresolved') {
     packetReplayPlaylist.value = events
@@ -1092,6 +1211,16 @@ async function rebuildPacketReplayFlow(events: EmulatorTopologyPacketReplayEvent
   }
 
   const analysis = result.analysis
+  if (!areComputedFlowSegmentsValid(analysis.pathSegments, events)) {
+    packetReplayPlaylist.value = events
+    packetReplayFlowPath.value = []
+    packetReplayFlowSegments.value = []
+    packetReplayPathSteps.value = []
+    packetReplayFlowResolved.value = false
+    packetReplayStatus.value = 'Computed flow did not match its source, destination, or topology links. Replaying packets with node highlights only.'
+    refreshDisplayGraph()
+    return
+  }
   logComputedPacketFlowPath('replay', analysis.pathSegments)
   packetReplayPlaylist.value = analysis.pathEvents
   packetReplayFlowPath.value = analysis.nodePath
@@ -1286,6 +1415,8 @@ watch(showOnlyPacketLinks, () => {
 })
 
 watch(flowAnimationEnabled, (enabled) => {
+  packetReplayFlowAnalysisGeneration += 1
+  packetReplayFlowAnalysisPending = false
   resetLiveFlowState()
   clearLivePacketAnimationQueues()
   if (enabled && packetReplayEvents.value.length > 0) {

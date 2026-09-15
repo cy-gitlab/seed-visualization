@@ -72,6 +72,7 @@ const LARGE_GRAPH_LINK_CURVE_SEGMENTS_2D = 6
 const HOVER_PICK_THROTTLE_MS = 100
 const INTERACTION_GRAPH_THRESHOLD = 4000
 const HOVER_PICK_MIN_MOVE_PX = 4
+const MAX_PACKET_HOP_TRACKS = 1500
 // Pull screen-space node markers slightly toward the camera. This keeps dense
 // link geometry behind nodes while preserving normal globe/terrain occlusion.
 const NODE_FOREGROUND_EYE_OFFSET = 35_000
@@ -1151,7 +1152,6 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
   }
 
   function updatePacketHops() {
-    if (cameraInteracting) return
     if (packetHopTracks.length === 0) return
     const nowMs = performance.now()
     for (let index = packetHopTracks.length - 1; index >= 0; index -= 1) {
@@ -1164,7 +1164,7 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
       const localProgress = scaled - leftIndex
       const left = track.positions[leftIndex]
       const right = track.positions[rightIndex]
-      if (left && right) {
+      if (!cameraInteracting && left && right) {
         track.point.position = Cartesian3.lerp(left, right, localProgress, track.scratch)
       }
       if (progress >= 1) {
@@ -1255,6 +1255,13 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
     if (positions.length < 2) {
       flashNode(toNodeId, Math.min(durationMs, 650))
       return
+    }
+
+    while (packetHopTracks.length >= MAX_PACKET_HOP_TRACKS) {
+      const oldest = packetHopTracks.shift()
+      if (!oldest) break
+      packetHopLines.remove(oldest.line)
+      packetHopPoints.remove(oldest.point)
     }
 
     const line = packetHopLines.add({

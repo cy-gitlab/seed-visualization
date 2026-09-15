@@ -23,6 +23,7 @@ type PendingRequest = {
 export class PacketFlowWorkerClient {
   private nextId = 1
   private worker?: Worker
+  private topologyEdges?: Array<{ from: string; to: string }>
   private readonly pending = new Map<number, PendingRequest>()
 
   analyze(
@@ -40,13 +41,19 @@ export class PacketFlowWorkerClient {
     const id = this.nextId
     this.nextId += 1
     const worker = this.ensureWorker()
+    const topologyEdges = options.topologyEdges
+    if (topologyEdges && topologyEdges !== this.topologyEdges) {
+      this.topologyEdges = topologyEdges
+      worker.postMessage({ type: 'set-topology', edges: toWorkerPlainData(topologyEdges) })
+    }
+    const requestOptions = topologyEdges ? { ...options, topologyEdges: undefined } : options
 
     return new Promise<PacketFlowWorkerAnalysisResult>((resolve) => {
       const timeoutId = window.setTimeout(() => {
         this.pending.delete(id)
         resolve({
           status: 'unresolved',
-          reason: `Packet flow analysis timed out after ${timeoutMs} ms.`,
+          reason: `Packet flow analysis timed out`,
         })
       }, timeoutMs)
 
@@ -55,7 +62,7 @@ export class PacketFlowWorkerClient {
         id,
         type: 'analyze',
         events: toWorkerPlainData(events),
-        options,
+        options: requestOptions,
       })
     })
   }
@@ -71,6 +78,7 @@ export class PacketFlowWorkerClient {
     this.pending.clear()
     this.worker?.terminate()
     this.worker = undefined
+    this.topologyEdges = undefined
   }
 
   private ensureWorker() {
@@ -88,6 +96,7 @@ export class PacketFlowWorkerClient {
       this.pending.clear()
       this.worker?.terminate()
       this.worker = undefined
+      this.topologyEdges = undefined
     }
     return this.worker
   }

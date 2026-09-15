@@ -78,6 +78,7 @@ let packetReplayGeneration = 0
 let packetReplayFlowAnalysisGeneration = 0
 const packetReplayWorker = new PacketReplayWorkerClient()
 const packetFlowWorker = new PacketFlowWorkerClient()
+const REPLAY_FLOW_ANALYSIS_TIMEOUT_MS = 10_000
 
 const {
   graph,
@@ -122,6 +123,9 @@ const {
   getPathFilterNodes: () => packetReplayFlowSegments.value,
   orientToNode: (nodeId) => globeRef.value?.orientToNode(nodeId),
 })
+const packetFlowTopologyEdges = computed(() =>
+  baseGraph.value.edges.map(({ from, to }) => ({ from, to })),
+)
 const packetReplayProgress = computed({
   get: () => packetReplayIndex.value,
   set: (value: number) => showPacketReplayEventAt(Number(value)),
@@ -557,7 +561,9 @@ function resolveGraphNodeId(...candidates: Array<string | undefined>) {
 
 async function rebuildPacketReplayFlow(events: EmulatorTopologyPacketReplayEvent[]) {
   const generation = ++packetReplayFlowAnalysisGeneration
-  const result = await packetFlowWorker.analyze(events, {}, 800)
+  const result = await packetFlowWorker.analyze(events, {
+    topologyEdges: packetFlowTopologyEdges.value,
+  }, REPLAY_FLOW_ANALYSIS_TIMEOUT_MS)
   if (generation !== packetReplayFlowAnalysisGeneration) return
   if (result.status === 'unresolved') {
     packetReplayPlaylist.value = events
