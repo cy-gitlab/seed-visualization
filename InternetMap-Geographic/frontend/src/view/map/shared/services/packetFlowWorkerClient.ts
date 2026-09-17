@@ -4,6 +4,7 @@ import type {
 } from './packetFlowAnalyzer'
 import type { EmulatorTopologyPacketReplayEvent } from './packetReplayFileService'
 import type { PacketFlowWorkerResponse } from './packetFlowWorker'
+import { isProxy, toRaw } from 'vue'
 
 export type PacketFlowWorkerAnalysisResult =
   | {
@@ -42,11 +43,12 @@ export class PacketFlowWorkerClient {
     this.nextId += 1
     const worker = this.ensureWorker()
     const topologyEdges = options.topologyEdges
-    if (topologyEdges && topologyEdges !== this.topologyEdges) {
-      this.topologyEdges = topologyEdges
-      worker.postMessage({ type: 'set-topology', edges: toWorkerPlainData(topologyEdges) })
-    }
-    const requestOptions = topologyEdges ? { ...options, topologyEdges: undefined } : options
+    const shouldUpdateTopology = Boolean(topologyEdges && topologyEdges !== this.topologyEdges)
+    const workerEvents = events.map((event) => ({ ...(isProxy(event) ? toRaw(event) : event) }))
+    const workerTopologyEdges = shouldUpdateTopology
+      ? topologyEdges!.map((edge) => ({ ...(isProxy(edge) ? toRaw(edge) : edge) }))
+      : undefined
+    const requestOptions = { ...options, topologyEdges: undefined }
 
     return new Promise<PacketFlowWorkerAnalysisResult>((resolve) => {
       const timeoutId = window.setTimeout(() => {
@@ -58,12 +60,25 @@ export class PacketFlowWorkerClient {
       }, timeoutMs)
 
       this.pending.set(id, { resolve, timeoutId })
-      worker.postMessage({
-        id,
-        type: 'analyze',
-        events: toWorkerPlainData(events),
-        options: requestOptions,
-      })
+      try {
+        if (workerTopologyEdges) {
+          this.topologyEdges = topologyEdges
+          worker.postMessage({ type: 'set-topology', edges: workerTopologyEdges })
+        }
+        worker.postMessage({
+          id,
+          type: 'analyze',
+          events: workerEvents,
+          options: requestOptions,
+        })
+      } catch (error) {
+        window.clearTimeout(timeoutId)
+        this.pending.delete(id)
+        resolve({
+          status: 'unresolved',
+          reason: error instanceof Error ? error.message : String(error),
+        })
+      }
     })
   }
 
@@ -121,8 +136,4 @@ export class PacketFlowWorkerClient {
       reason: message.type === 'unresolved' ? message.reason : message.error,
     })
   }
-}
-
-function toWorkerPlainData<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T
 }

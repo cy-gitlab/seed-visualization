@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, shallowRef, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import Map3DGlobe from '@/components/Map3DGlobe/index.vue'
 import EmulatorTopologyDock from '@/view/map/shared/components/EmulatorTopologyDock.vue'
@@ -36,6 +36,9 @@ const MAX_CONSECUTIVE_FLOW_FAILURES = 6
 const FLOW_FAILURE_GRACE_MS = 15_000
 const LIVE_FLOW_ANALYSIS_TIMEOUT_MS = 3_000
 const REPLAY_FLOW_ANALYSIS_TIMEOUT_MS = 10_000
+const RECORDING_UI_UPDATE_INTERVAL_MS = 250
+const MAX_TIMELINE_VISUALS_PER_WINDOW = 8
+const MAX_TIMELINE_VISUAL_SCAN_PER_WINDOW = 512
 
 type PacketReplayTimingMode = 'interval' | 'timeline'
 type LivePacketAnimationJob = {
@@ -54,11 +57,15 @@ const props = withDefaults(defineProps<{
 
 const topologyLoaded = ref(false)
 const activeDockPage = ref<'overview' | 'settings' | 'traffic'>('overview')
-const packetReplayEvents = ref<EmulatorTopologyPacketReplayEvent[]>([])
+const packetReplayEvents = shallowRef<EmulatorTopologyPacketReplayEvent[]>([])
+const recordedPacketCount = ref(0)
 const packetReplayPlaylist = ref<EmulatorTopologyPacketReplayEvent[]>([])
 const packetReplayFlowPath = ref<string[]>([])
 const packetReplayFlowSegments = ref<string[][]>([])
 const packetReplayPathSteps = ref<PacketFlowPathStep[]>([])
+const packetReplayPathByFlowKey = new Map<string, string[]>()
+const packetReplayDirectPathCache = new Map<string, string[]>()
+const packetReplayAnimatedPathCache = new Map<string, string[]>()
 const packetReplayFlowResolved = ref(false)
 const liveFlowEvents = ref<EmulatorTopologyPacketReplayEvent[]>([])
 const liveFlowPath = ref<string[]>([])
@@ -66,6 +73,8 @@ const liveFlowSegments = ref<string[][]>([])
 const liveFlowPathSteps = ref<PacketFlowPathStep[]>([])
 const packetReplayIndex = ref(0)
 const packetReplayPlaying = ref(false)
+const packetReplayPaused = ref(false)
+const packetReplayPreparing = ref(false)
 const packetReplayTimingMode = ref<PacketReplayTimingMode>('interval')
 const packetReplayIntervalMs = ref(1200)
 const packetReplayTimelineWindowMs = ref(DEFAULT_TIMELINE_WINDOW_MS)
@@ -83,9 +92,9 @@ const trafficFilterError = ref('')
 const trafficFilterSubmitting = ref(false)
 const trafficCaptureActive = ref(false)
 let packetReplayTimerId: number | undefined
-const packetReplayScheduledTimerIds = new Set<number>()
 let consoleWindowManager: WindowManager | undefined
 let packetReplayGeneration = 0
+let packetReplayPreparationGeneration = 0
 let trafficObserverClient: TrafficObserverClient | undefined
 let lastLivePacketReceivedAtMs = 0
 const livePacketAnimationQueue: LivePacketAnimationJob[] = []
@@ -100,9 +109,12 @@ let liveFlowAnalysisRunning = false
 let liveFlowAnalysisPending = false
 let packetReplayFlowAnalysisRunning = false
 let packetReplayFlowAnalysisPending = false
+let packetReplayFlowAnalysisPromise: Promise<void> | undefined
 let pendingPacketReplayEvents: EmulatorTopologyPacketReplayEvent[] = []
 let consecutiveLiveFlowFailures = 0
 let liveFlowFailureStartedAtMs = 0
+let hoverCardCloseTimerId: number | undefined
+let lastRecordingUiUpdateAtMs = 0
 const packetFlowWorker = new PacketFlowWorkerClient()
 
 const {
@@ -141,13 +153,13 @@ const {
   querySearchSuggestions,
   selectSearchSuggestion,
   onNodeClick,
-  onNodeHover,
+  onNodeHover: setHoveredNode,
   onGlobeRendered,
   clearTopologyFilters,
 } = useEmulatorTopologyGraph({
   getPathFilterEnabled: () => showOnlyPacketLinks.value,
   getPathFilterNodes: () => {
-    if (packetReplayPlaying.value) return packetReplayFlowSegments.value
+    if (packetReplayPlaying.value || packetReplayPaused.value) return packetReplayFlowSegments.value
     return trafficCaptureActive.value ? liveFlowSegments.value : []
   },
   orientToNode: (nodeId) => globeRef.value?.orientToNode(nodeId),
@@ -155,15 +167,55 @@ const {
 const packetFlowTopologyEdges = computed(() =>
   baseGraph.value.edges.map(({ from, to }) => ({ from, to })),
 )
+const graphNodeIdByAlias = computed(() => {
+  const aliases = new Map<string, string>()
+  baseGraph.value.nodes.forEach((node) => {
+    const values = [node.id, node.sourceId, node.label]
+    values.forEach((value) => {
+      const key = value?.trim().toLowerCase()
+      if (key && !aliases.has(key)) aliases.set(key, node.id)
+    })
+  })
+  return aliases
+})
+const graphSearchEntries = computed(() => baseGraph.value.nodes.map((node) => ({
+  id: node.id,
+  searchText: node.searchText?.toLowerCase() ?? '',
+})))
+const graphEdgeKeys = computed(() => {
+  const keys = new Set<string>()
+  baseGraph.value.edges.forEach((edge) => {
+    keys.add(makeGraphEdgeKey(edge.from, edge.to))
+  })
+  return keys
+})
 const packetReplayProgress = computed({
   get: () => packetReplayIndex.value,
   set: (value: number) => showPacketReplayEventAt(Number(value)),
 })
-const packetReplayStepCount = computed(() =>
-  packetReplayTimingMode.value === 'timeline'
-    ? packetReplayEvents.value.length
-    : packetReplayPlaylist.value.length || packetReplayFlowPath.value.length || packetReplayEvents.value.length,
-)
+const packetReplayStepCount = computed(() => recordedPacketCount.value)
+
+function cancelHoverCardClose() {
+  if (hoverCardCloseTimerId === undefined) return
+  window.clearTimeout(hoverCardCloseTimerId)
+  hoverCardCloseTimerId = undefined
+}
+
+function onNodeHover(node: Parameters<typeof setHoveredNode>[0], position: { x: number; y: number }) {
+  cancelHoverCardClose()
+  if (node) {
+    setHoveredNode(node, position)
+    return
+  }
+  hoverCardCloseTimerId = window.setTimeout(() => {
+    hoverCardCloseTimerId = undefined
+    setHoveredNode(undefined, position)
+  }, 1000)
+}
+
+function onHoverCardLeave() {
+  onNodeHover(undefined, hoverPosition.value)
+}
 
 function initConsoleWindowManager() {
   if (consoleWindowManager) return
@@ -213,7 +265,7 @@ async function reloadDockerTopology() {
 function showPacketReplayEventAt(index: number) {
   const events = packetReplayTimingMode.value === 'timeline'
     ? ensureTimelinePacketReplayEvents()
-    : ensurePacketReplayPlaylist()
+    : packetReplayEvents.value
   if (!events.length) return
   packetReplayIndex.value = Math.max(0, Math.min(events.length, Math.round(index)))
   if (packetReplayTimingMode.value === 'timeline') {
@@ -223,7 +275,7 @@ function showPacketReplayEventAt(index: number) {
     playPacketReplayPacket(packetReplayIndex.value)
     return
   }
-  playPacketReplayStep(packetReplayIndex.value)
+  playPacketReplayIntervalEvent(packetReplayIndex.value)
 }
 
 function jumpPacketReplay(direction: number) {
@@ -241,14 +293,15 @@ function playNextPacketReplayEvent() {
     return
   }
 
-  const events = packetReplayPlaylist.value
+  const events = packetReplayEvents.value
   if (packetReplayIndex.value >= events.length) {
     packetReplayPlaying.value = false
+    packetReplayPaused.value = false
     return
   }
 
   packetReplayIndex.value += 1
-  playPacketReplayStep(packetReplayIndex.value)
+  playPacketReplayIntervalEvent(packetReplayIndex.value)
   scheduleNextPacketReplay(playNextPacketReplayEvent, Math.max(0, getNextPacketReplayDelayMs(packetReplayIndex.value)))
 }
 
@@ -256,6 +309,7 @@ function playNextPacketReplaySpeedEvent() {
   const events = packetReplayEvents.value
   if (!events.length || packetReplayIndex.value >= events.length) {
     packetReplayPlaying.value = false
+    packetReplayPaused.value = false
     return
   }
 
@@ -264,35 +318,61 @@ function playNextPacketReplaySpeedEvent() {
   scheduleNextPacketReplay(playNextPacketReplayEvent, Math.max(0, getNextPacketReplayDelayMs(packetReplayIndex.value)))
 }
 
-function togglePacketReplay() {
-  if (packetRecordingEnabled.value) return
-  const events = packetReplayTimingMode.value === 'timeline'
-    ? ensureTimelinePacketReplayEvents()
-    : ensurePacketReplayPlaylist()
-  if (!events.length) return
+async function togglePacketReplay() {
+  if (packetRecordingEnabled.value || packetReplayPreparing.value) return
   if (packetReplayPlaying.value) {
     packetReplayPlaying.value = false
+    packetReplayPaused.value = true
     cancelPacketReplayQueue()
     return
   }
+
+  if (
+    packetReplayTimingMode.value === 'timeline' &&
+    flowAnimationEnabled.value &&
+    packetReplayEvents.value.length > 0 &&
+    !packetReplayFlowResolved.value
+  ) {
+    const preparationGeneration = ++packetReplayPreparationGeneration
+    packetReplayPreparing.value = true
+    packetReplayStatus.value = `Calculating packet paths for ${packetReplayEvents.value.length.toLocaleString()} recorded packets...`
+    try {
+      await rebuildPacketReplayFlow(packetReplayEvents.value)
+    } finally {
+      if (preparationGeneration === packetReplayPreparationGeneration) {
+        packetReplayPreparing.value = false
+      }
+    }
+    if (preparationGeneration !== packetReplayPreparationGeneration) return
+  }
+  const events = packetReplayTimingMode.value === 'timeline'
+    ? ensureTimelinePacketReplayEvents()
+    : packetReplayEvents.value
+  if (!events.length) return
 
   if (packetReplayIndex.value >= events.length) {
     packetReplayIndex.value = 0
   }
   cancelPacketReplayQueue()
   packetReplayTimelineCursorMs.value = undefined
+  packetReplayPaused.value = false
   packetReplayPlaying.value = true
   playNextPacketReplayEvent()
 }
 
 function stopPacketReplay() {
+  packetReplayPreparationGeneration += 1
+  packetReplayPreparing.value = false
   packetReplayPlaying.value = false
+  packetReplayPaused.value = false
   cancelPacketReplayQueue()
   packetReplayIndex.value = 0
   packetReplayPlaylist.value = []
   packetReplayFlowPath.value = []
   packetReplayFlowSegments.value = []
   packetReplayPathSteps.value = []
+  packetReplayPathByFlowKey.clear()
+  clearPacketReplayPathCaches()
   packetReplayFlowResolved.value = false
   resetLiveFlowState()
   packetReplayTimelineCursorMs.value = undefined
@@ -310,8 +390,6 @@ function clearPacketReplayTimers() {
     window.clearTimeout(packetReplayTimerId)
     packetReplayTimerId = undefined
   }
-  packetReplayScheduledTimerIds.forEach((timerId) => window.clearTimeout(timerId))
-  packetReplayScheduledTimerIds.clear()
 }
 
 function scheduleNextPacketReplay(callback: () => void, delayMs: number) {
@@ -323,24 +401,19 @@ function scheduleNextPacketReplay(callback: () => void, delayMs: number) {
   }, Math.max(0, delayMs))
 }
 
-function schedulePacketReplayCallback(callback: () => void, delayMs: number) {
-  const generation = packetReplayGeneration
-  const timerId = window.setTimeout(() => {
-    packetReplayScheduledTimerIds.delete(timerId)
-    if (generation !== packetReplayGeneration) return
-    callback()
-  }, Math.max(0, delayMs))
-  packetReplayScheduledTimerIds.add(timerId)
-}
-
 function clearPacketReplay() {
   if (packetRecordingEnabled.value) return
   stopPacketReplay()
+  packetReplayIndex.value = 0
+  packetReplayTimelineCursorMs.value = undefined
   packetReplayEvents.value = []
+  recordedPacketCount.value = 0
   packetReplayPlaylist.value = []
   packetReplayFlowPath.value = []
   packetReplayFlowSegments.value = []
   packetReplayPathSteps.value = []
+  packetReplayPathByFlowKey.clear()
+  clearPacketReplayPathCaches()
   packetReplayFlowResolved.value = false
   resetLiveFlowState()
   packetReplayStatus.value = 'Submit a filter, then record live packets for replay.'
@@ -350,7 +423,8 @@ function clearPacketReplay() {
 async function handleLivePacket(packet: EmulatorTopologyPacketReplayEvent) {
   if (
     !trafficCaptureActive.value ||
-    packetReplayPlaying.value
+    packetReplayPlaying.value ||
+    packetReplayPaused.value
   ) {
     return
   }
@@ -377,30 +451,33 @@ async function handleLivePacket(packet: EmulatorTopologyPacketReplayEvent) {
     pruneStaleLiveFlows(now)
   }
 
-  const livePathChanged = !flowAnimationEnabled.value || shouldSkipLivePacketAnimation(remappedPacket)
-    ? false
-    : await updateLiveFlowPathIfNeeded(remappedPacket)
+  if (flowAnimationEnabled.value && !shouldSkipLivePacketAnimation(remappedPacket)) {
+    await updateLiveFlowPathIfNeeded(remappedPacket)
+  }
 
   if (packetRecordingEnabled.value) {
     packetReplayEvents.value.push(remappedPacket)
-    if (livePathChanged) {
-      void rebuildPacketReplayFlow(packetReplayEvents.value)
+    const reachedRecordingLimit = packetReplayEvents.value.length >= MAX_RECORDED_PACKET_EVENTS
+    const shouldUpdateRecordingUi = reachedRecordingLimit || now - lastRecordingUiUpdateAtMs >= RECORDING_UI_UPDATE_INTERVAL_MS
+    if (shouldUpdateRecordingUi) {
+      lastRecordingUiUpdateAtMs = now
+      recordedPacketCount.value = packetReplayEvents.value.length
+      packetReplayIndex.value = recordedPacketCount.value
     }
-    packetReplayIndex.value = packetReplayTimingMode.value === 'timeline'
-      ? packetReplayEvents.value.length
-      : packetReplayPlaylist.value.length || packetReplayEvents.value.length
-    if (packetReplayEvents.value.length >= MAX_RECORDED_PACKET_EVENTS) {
+    if (reachedRecordingLimit) {
       packetRecordingEnabled.value = false
+      packetReplayIndex.value = 0
+      packetReplayTimelineCursorMs.value = undefined
       packetReplayStatus.value = `Recording stopped at the ${MAX_RECORDED_PACKET_EVENTS.toLocaleString()} packet limit. Clear the recording before starting again.`
       ElMessage.warning({
         message: `Recording reached the ${MAX_RECORDED_PACKET_EVENTS.toLocaleString()} packet limit and was stopped.`,
         duration: 15_000,
         showClose: true,
       })
-    } else {
+    } else if (shouldUpdateRecordingUi) {
       packetReplayStatus.value = flowAnimationEnabled.value
-        ? `Recording live flow: ${packetReplayFlowPath.value.length.toLocaleString()} flow steps from ${packetReplayEvents.value.length.toLocaleString()} packets.`
-        : `Recording live packets: ${packetReplayEvents.value.length.toLocaleString()} captured.`
+        ? `Recording live flow: ${liveFlowPath.value.length.toLocaleString()} flow steps from ${recordedPacketCount.value.toLocaleString()} packets.`
+        : `Recording live packets: ${recordedPacketCount.value.toLocaleString()} captured.`
     }
   } else {
     packetReplayStatus.value = flowAnimationEnabled.value
@@ -619,6 +696,25 @@ function getLiveFlowKey(event: EmulatorTopologyPacketReplayEvent) {
   return `${protocol}|${sourceEndpoint}|${destEndpoint}`
 }
 
+function getReplayAnalysisFlowKey(event: EmulatorTopologyPacketReplayEvent) {
+  const protocol = (event.ipProtocol || String(event.ipProtocolNumber ?? '') || 'unknown').toLowerCase()
+  const sourceEndpoint = makeLiveEndpointKey(event.sourceIp, event.sourcePort)
+  const destEndpoint = makeLiveEndpointKey(event.destIp, event.destPort)
+  if (!sourceEndpoint && !destEndpoint) {
+    return `${protocol}|${event.containerId}`
+  }
+  return `${protocol}|${sourceEndpoint}|${destEndpoint}`
+}
+
+function getReplayAnalysisObservationKey(event: EmulatorTopologyPacketReplayEvent) {
+  return [
+    getReplayAnalysisFlowKey(event),
+    makeObservationPart(event.containerId, event.containerName, event.nodeName, event.nodeIp, event.nodeLabel),
+    makeObservationPart(event.networkId, event.networkName, event.networkLabel, event.ifName),
+    event.packetRole,
+  ].map((value) => String(value ?? '')).join('|')
+}
+
 function makeLiveEndpointKey(ip: string | undefined, port: number | undefined) {
   return `${ip || ''}:${port ?? 0}`
 }
@@ -630,40 +726,11 @@ function makeObservationPart(...values: Array<string | number | undefined>) {
     .join('/')
 }
 
-function animatePacketHop(
-  fromNodeId: string | undefined,
-  toNodeId: string | undefined,
-  position = packetReplayIndex.value,
-) {
-  const visualDurationMs = getCurrentReplayVisualDurationMs(position)
-  if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) {
-    globeRef.value?.flashNode(toNodeId || fromNodeId || '', Math.min(1200, Math.max(16, visualDurationMs * 0.65)))
-    return
-  }
-
-  globeRef.value?.animatePacketHop(fromNodeId, toNodeId, Math.max(1, visualDurationMs))
-}
-
-function playPacketReplayStep(position: number) {
-  const targetIndex = Math.max(0, position - 1)
-  const step = packetReplayPathSteps.value[targetIndex]
-  const targetNodeId = step?.nodeId
-  if (!targetNodeId) return
-
-  if (!step.previousNodeId) {
-    const visualDurationMs = getCurrentReplayVisualDurationMs(position)
-    globeRef.value?.flashNode(targetNodeId, Math.min(1200, Math.max(16, visualDurationMs * 0.65)))
-    return
-  }
-
-  logPacketReplayHop(step.previousNodeId, targetNodeId, step.event)
-  animatePacketHop(step.previousNodeId, targetNodeId)
-}
-
 function playNextPacketReplayWindow() {
   const events = packetReplayEvents.value
   if (!events.length || packetReplayIndex.value >= events.length) {
     packetReplayPlaying.value = false
+    packetReplayPaused.value = false
     packetReplayTimelineCursorMs.value = undefined
     return
   }
@@ -673,16 +740,34 @@ function playNextPacketReplayWindow() {
   const startMs = getPacketTimestampMs(events[startIndex]!)
   const endMs = startMs + windowMs
   let nextIndex = startIndex
+  const visualIndexes = new Map<string, number>()
 
   while (nextIndex < events.length && getPacketTimestampMs(events[nextIndex]!) <= endMs) {
+    if (
+      nextIndex - startIndex < MAX_TIMELINE_VISUAL_SCAN_PER_WINDOW &&
+      visualIndexes.size < MAX_TIMELINE_VISUALS_PER_WINDOW
+    ) {
+      const event = events[nextIndex]!
+      visualIndexes.set(getReplayAnalysisObservationKey(event), nextIndex)
+    }
     nextIndex += 1
   }
   if (nextIndex === startIndex) {
+    const event = events[nextIndex]!
+    visualIndexes.set(getReplayAnalysisObservationKey(event), nextIndex)
     nextIndex += 1
   }
 
-  const windowEvents = events.slice(startIndex, nextIndex)
-  const lastWindowDelayMs = playPacketReplayWindow(windowEvents, startIndex)
+  packetReplayIndex.value = nextIndex
+  const currentWindowEndMs = getPacketTimestampMs(events[nextIndex - 1]!)
+  const safeSpeed = Math.max(0.0001, packetReplayTimelineSpeed.value)
+  const windowVisualDurationMs = Math.max(
+    MIN_PACKET_VISUAL_DURATION_MS,
+    (currentWindowEndMs - startMs) / safeSpeed,
+  )
+  visualIndexes.forEach((packetIndex) => {
+    playPacketReplayPacketAtIndex(packetIndex, windowVisualDurationMs)
+  })
   const nextWindowStartMs = nextIndex < events.length ? getPacketTimestampMs(events[nextIndex]!) : endMs
   packetReplayTimelineCursorMs.value = nextIndex < events.length ? nextWindowStartMs : undefined
 
@@ -690,36 +775,11 @@ function playNextPacketReplayWindow() {
     playNextPacketReplayEvent,
     Math.max(
       MIN_REPLAY_TIMER_DELAY_MS,
-      (nextWindowStartMs - startMs) / Math.max(0.0001, packetReplayTimelineSpeed.value),
-      lastWindowDelayMs + MIN_REPLAY_TIMER_DELAY_MS,
+      nextIndex < events.length
+        ? (nextWindowStartMs - startMs) / safeSpeed
+        : windowVisualDurationMs,
     ),
   )
-}
-
-function playPacketReplayWindow(events: EmulatorTopologyPacketReplayEvent[], startIndex: number) {
-  if (!events.length) return 0
-  const windowStartMs = getPacketTimestampMs(events[0]!)
-  const safeSpeed = Math.max(0.0001, packetReplayTimelineSpeed.value)
-  let lastDelayMs = 0
-
-  console.log('[packet replay window]', {
-    packets: events.length,
-    from: events[0]?.timestampMs,
-    to: events[events.length - 1]?.timestampMs,
-  })
-
-  events.forEach((_, offset) => {
-    const event = events[offset]!
-    const eventOffsetMs = Math.max(0, getPacketTimestampMs(event) - windowStartMs)
-    const delayMs = Math.max(0, eventOffsetMs / safeSpeed)
-    lastDelayMs = Math.max(lastDelayMs, delayMs)
-    schedulePacketReplayCallback(() => {
-      packetReplayIndex.value = startIndex + offset + 1
-      playPacketReplayPacketAtIndex(startIndex + offset)
-    }, delayMs)
-  })
-
-  return lastDelayMs
 }
 
 function playLivePacketAnimation(event: EmulatorTopologyPacketReplayEvent) {
@@ -880,10 +940,13 @@ function appendObservedDestinationEndpoint(pathNodeIds: string[], event: Emulato
 }
 
 function hasGraphEdge(leftNodeId: string, rightNodeId: string) {
-  return baseGraph.value.edges.some((edge) =>
-    edge.from === leftNodeId && edge.to === rightNodeId ||
-    edge.from === rightNodeId && edge.to === leftNodeId,
-  )
+  return graphEdgeKeys.value.has(makeGraphEdgeKey(leftNodeId, rightNodeId))
+}
+
+function makeGraphEdgeKey(leftNodeId: string, rightNodeId: string) {
+  return leftNodeId < rightNodeId
+    ? `${leftNodeId}\u0000${rightNodeId}`
+    : `${rightNodeId}\u0000${leftNodeId}`
 }
 
 function isCompleteGraphFlowPath(pathNodeIds: string[], event: EmulatorTopologyPacketReplayEvent) {
@@ -987,50 +1050,52 @@ function playPacketReplayPacket(position: number) {
   playPacketReplayPacketAtIndex(Math.max(0, position - 1))
 }
 
-function playPacketReplayPacketAtIndex(packetIndex: number) {
+function playPacketReplayIntervalEvent(position: number) {
+  const packetIndex = Math.max(0, position - 1)
+  const event = packetReplayEvents.value[packetIndex]
+  if (!event) return
+  flashPacketReplayEventNodes(event, packetIndex)
+}
+
+function playPacketReplayPacketAtIndex(packetIndex: number, visualDurationMs?: number) {
   const event = packetReplayEvents.value[packetIndex]
   if (!event) return
 
   if (!flowAnimationEnabled.value) {
-    flashPacketReplayEventNodes(event, packetIndex)
+    flashPacketReplayEventNodes(event, packetIndex, visualDurationMs)
     return
   }
   if (!packetReplayFlowResolved.value) {
-    flashPacketReplayEventNodes(event, packetIndex)
+    flashPacketReplayEventNodes(event, packetIndex, visualDurationMs)
     return
   }
 
-  const eventSteps = packetReplayPathSteps.value.filter((step) => step.event === event)
-  if (eventSteps.length > 0) {
-    playPacketReplaySteps(eventSteps, packetIndex)
+  const observationKey = getReplayAnalysisObservationKey(event)
+  let localPath = packetReplayAnimatedPathCache.get(observationKey)
+  if (!localPath) {
+    const completePath = packetReplayPathByFlowKey.get(getReplayAnalysisFlowKey(event))
+    localPath = completePath ? getPacketLocalPathFromCompletePath(event, completePath) : []
+    packetReplayAnimatedPathCache.set(observationKey, localPath)
+  }
+  if (localPath.length > 1) {
+    playPacketDirectPath(event, localPath, packetIndex, visualDurationMs)
     return
   }
 
   const directPath = getPacketDirectPath(event)
   if (directPath.length === 0) return
 
-  playPacketDirectPath(event, directPath, packetIndex)
+  playPacketDirectPath(event, directPath, packetIndex, visualDurationMs)
 }
 
-function playPacketReplaySteps(steps: PacketFlowPathStep[], packetIndex: number) {
-  const stepCount = Math.max(1, steps.length)
-  const stepDelayMs = Math.max(1, getCurrentReplayVisualDurationMs(packetIndex + 1) / Math.max(2, stepCount + 1))
-
-  steps.forEach((step, index) => {
-    schedulePacketReplayCallback(() => {
-      if (!step.previousNodeId) {
-        globeRef.value?.flashNode(step.nodeId, Math.min(1200, Math.max(16, getCurrentReplayVisualDurationMs(packetIndex + 1) * 0.65)))
-        return
-      }
-      logPacketReplayHop(step.previousNodeId, step.nodeId, step.event)
-      animatePacketHop(step.previousNodeId, step.nodeId, packetIndex + 1)
-    }, index * stepDelayMs)
-  })
-}
-
-function playPacketDirectPath(event: EmulatorTopologyPacketReplayEvent, pathNodeIds: string[], packetIndex: number) {
+function playPacketDirectPath(
+  event: EmulatorTopologyPacketReplayEvent,
+  pathNodeIds: string[],
+  packetIndex: number,
+  visualDurationMs = getCurrentReplayVisualDurationMs(packetIndex + 1),
+) {
   const stepCount = Math.max(1, pathNodeIds.length - 1)
-  const stepDelayMs = Math.max(1, getCurrentReplayVisualDurationMs(packetIndex + 1) / Math.max(2, stepCount + 1))
+  const stepDelayMs = Math.max(1, visualDurationMs / Math.max(2, stepCount + 1))
 
   if (pathNodeIds.length === 1) {
     const nodeId = pathNodeIds[0]!
@@ -1042,34 +1107,48 @@ function playPacketDirectPath(event: EmulatorTopologyPacketReplayEvent, pathNode
       sourceIp: event.sourceIp || '-',
       destIp: event.destIp || '-',
     })
-    globeRef.value?.flashNode(nodeId, Math.min(1200, Math.max(16, getCurrentReplayVisualDurationMs(packetIndex + 1) * 0.65)))
+    globeRef.value?.flashNode(nodeId, Math.min(1200, Math.max(16, visualDurationMs * 0.65)))
     return
   }
 
   for (let index = 1; index < pathNodeIds.length; index += 1) {
-    const fromNodeId = pathNodeIds[index - 1]!
-    const toNodeId = pathNodeIds[index]!
-    schedulePacketReplayCallback(() => {
-      logPacketReplayHop(fromNodeId, toNodeId, event)
-      animatePacketHop(fromNodeId, toNodeId, packetIndex + 1)
-    }, (index - 1) * stepDelayMs)
+    logPacketReplayHop(pathNodeIds[index - 1]!, pathNodeIds[index]!, event)
   }
+  globeRef.value?.animatePacketPath(
+    pathNodeIds,
+    Math.max(1, visualDurationMs),
+    stepDelayMs,
+  )
 }
 
 function getPacketDirectPath(event: EmulatorTopologyPacketReplayEvent) {
-  return uniquePathNodes([
+  const key = getReplayAnalysisObservationKey(event)
+  const cached = packetReplayDirectPathCache.get(key)
+  if (cached) return cached
+  const path = uniquePathNodes([
     resolveGraphNodeId(event.sourceContainerId, event.sourceContainerName, event.sourceNodeName, event.sourceNodeIp),
     resolveGraphNodeId(event.networkId, event.networkName, event.networkLabel),
     resolveGraphNodeId(event.destContainerId, event.destContainerName, event.destNodeName, event.destNodeIp),
   ].filter(Boolean) as string[])
+  packetReplayDirectPathCache.set(key, path)
+  return path
 }
 
-function flashPacketReplayEventNodes(event: EmulatorTopologyPacketReplayEvent, packetIndex: number) {
+function clearPacketReplayPathCaches() {
+  packetReplayDirectPathCache.clear()
+  packetReplayAnimatedPathCache.clear()
+}
+
+function flashPacketReplayEventNodes(
+  event: EmulatorTopologyPacketReplayEvent,
+  packetIndex: number,
+  visualDurationMs = getCurrentReplayVisualDurationMs(packetIndex + 1),
+) {
   const nodeIds = getPacketDirectPath(event)
   if (!nodeIds.length) return
   globeRef.value?.flashNodes(
     nodeIds,
-    Math.min(1200, Math.max(16, getCurrentReplayVisualDurationMs(packetIndex + 1) * 0.65)),
+    Math.min(1200, Math.max(16, visualDurationMs * 0.65)),
   )
 }
 
@@ -1082,16 +1161,10 @@ function resolveGraphNodeId(...candidates: Array<string | undefined>) {
     const normalizedCandidate = candidate?.trim().toLowerCase()
     if (!normalizedCandidate) continue
 
-    const exact = baseGraph.value.nodes.find((node) =>
-      node.id.toLowerCase() === normalizedCandidate ||
-      node.sourceId?.toLowerCase() === normalizedCandidate ||
-      node.label.toLowerCase() === normalizedCandidate,
-    )
-    if (exact) return exact.id
+    const exactNodeId = graphNodeIdByAlias.value.get(normalizedCandidate)
+    if (exactNodeId) return exactNodeId
 
-    const searchable = baseGraph.value.nodes.find((node) =>
-      node.searchText?.toLowerCase().includes(normalizedCandidate),
-    )
+    const searchable = graphSearchEntries.value.find((node) => node.searchText.includes(normalizedCandidate))
     if (searchable) return searchable.id
   }
 
@@ -1180,16 +1253,20 @@ async function rebuildPacketReplayFlow(events: EmulatorTopologyPacketReplayEvent
   pendingPacketReplayEvents = events
   if (packetReplayFlowAnalysisRunning) {
     packetReplayFlowAnalysisPending = true
-    return
+    return packetReplayFlowAnalysisPromise
   }
   packetReplayFlowAnalysisRunning = true
-  try {
+  packetReplayFlowAnalysisPromise = (async () => {
     do {
       packetReplayFlowAnalysisPending = false
       await runPacketReplayFlowAnalysis(pendingPacketReplayEvents)
     } while (packetReplayFlowAnalysisPending && flowAnimationEnabled.value)
+  })()
+  try {
+    await packetReplayFlowAnalysisPromise
   } finally {
     packetReplayFlowAnalysisRunning = false
+    packetReplayFlowAnalysisPromise = undefined
   }
 }
 
@@ -1197,6 +1274,7 @@ async function runPacketReplayFlowAnalysis(events: EmulatorTopologyPacketReplayE
   const generation = ++packetReplayFlowAnalysisGeneration
   const result = await packetFlowWorker.analyze(events, {
     topologyEdges: packetFlowTopologyEdges.value,
+    compactObservations: true,
   }, REPLAY_FLOW_ANALYSIS_TIMEOUT_MS)
   if (generation !== packetReplayFlowAnalysisGeneration) return
   if (result.status === 'unresolved') {
@@ -1204,6 +1282,8 @@ async function runPacketReplayFlowAnalysis(events: EmulatorTopologyPacketReplayE
     packetReplayFlowPath.value = []
     packetReplayFlowSegments.value = []
     packetReplayPathSteps.value = []
+    packetReplayPathByFlowKey.clear()
+    clearPacketReplayPathCaches()
     packetReplayFlowResolved.value = false
     packetReplayStatus.value = `${result.reason} Replaying packets with node highlights only.`
     refreshDisplayGraph()
@@ -1211,11 +1291,13 @@ async function runPacketReplayFlowAnalysis(events: EmulatorTopologyPacketReplayE
   }
 
   const analysis = result.analysis
-  if (!areComputedFlowSegmentsValid(analysis.pathSegments, events)) {
+  if (!areComputedFlowSegmentsValid(analysis.pathSegments, analysis.events)) {
     packetReplayPlaylist.value = events
     packetReplayFlowPath.value = []
     packetReplayFlowSegments.value = []
     packetReplayPathSteps.value = []
+    packetReplayPathByFlowKey.clear()
+    clearPacketReplayPathCaches()
     packetReplayFlowResolved.value = false
     packetReplayStatus.value = 'Computed flow did not match its source, destination, or topology links. Replaying packets with node highlights only.'
     refreshDisplayGraph()
@@ -1226,27 +1308,27 @@ async function runPacketReplayFlowAnalysis(events: EmulatorTopologyPacketReplayE
   packetReplayFlowPath.value = analysis.nodePath
   packetReplayFlowSegments.value = analysis.pathSegments
   packetReplayPathSteps.value = analysis.pathSteps
+  packetReplayPathByFlowKey.clear()
+  clearPacketReplayPathCaches()
+  analysis.pathSteps.forEach((step) => {
+    const path = packetReplayPathByFlowKey.get(step.flowKey) ?? []
+    if (path[path.length - 1] !== step.nodeId) path.push(step.nodeId)
+    packetReplayPathByFlowKey.set(step.flowKey, path)
+  })
   packetReplayFlowResolved.value = true
   refreshDisplayGraph()
 }
 
-function ensurePacketReplayPlaylist() {
-  if (!flowAnimationEnabled.value) {
-    packetReplayPlaylist.value = packetReplayEvents.value
-    return packetReplayPlaylist.value
-  }
-
-  if (!packetReplayPlaylist.value.length) {
-    void rebuildPacketReplayFlow(packetReplayEvents.value)
-  }
-
-  return packetReplayPlaylist.value
-}
-
 function ensureTimelinePacketReplayEvents() {
-  packetReplayEvents.value = [...packetReplayEvents.value].sort((left, right) =>
-    getPacketTimestampMs(left) - getPacketTimestampMs(right),
-  )
+  const events = packetReplayEvents.value
+  const alreadySorted = events.every((event, index) => (
+    index === 0 || getPacketTimestampMs(events[index - 1]!) <= getPacketTimestampMs(event)
+  ))
+  if (!alreadySorted) {
+    packetReplayEvents.value = [...events].sort((left, right) =>
+      getPacketTimestampMs(left) - getPacketTimestampMs(right),
+    )
+  }
   return packetReplayEvents.value
 }
 
@@ -1302,19 +1384,28 @@ function handleVisibilityChange() {
 }
 
 function togglePacketRecording() {
-  if (!trafficCaptureActive.value || packetReplayPlaying.value) return
+  if (!trafficCaptureActive.value || packetReplayPlaying.value || packetReplayPaused.value || packetReplayPreparing.value) return
 
   if (packetRecordingEnabled.value) {
     packetRecordingEnabled.value = false
+    recordedPacketCount.value = packetReplayEvents.value.length
+    packetReplayIndex.value = 0
+    packetReplayTimelineCursorMs.value = undefined
     packetReplayStatus.value = `Recording paused at ${packetReplayEvents.value.length.toLocaleString()} packets.`
     return
   }
 
   packetReplayEvents.value = []
+  recordedPacketCount.value = 0
+  lastRecordingUiUpdateAtMs = 0
+  packetReplayFlowAnalysisGeneration += 1
+  packetReplayFlowAnalysisPending = false
   packetReplayPlaylist.value = []
   packetReplayFlowPath.value = []
   packetReplayFlowSegments.value = []
   packetReplayPathSteps.value = []
+  packetReplayPathByFlowKey.clear()
+  clearPacketReplayPathCaches()
   packetReplayFlowResolved.value = false
   packetReplayIndex.value = 0
   packetRecordingEnabled.value = true
@@ -1366,10 +1457,14 @@ async function submitTrafficFilter() {
       : 'Live capture stopped.'
     if (trafficCaptureActive.value) {
       packetReplayEvents.value = []
+      recordedPacketCount.value = 0
+      lastRecordingUiUpdateAtMs = 0
       packetReplayPlaylist.value = []
       packetReplayFlowPath.value = []
       packetReplayFlowSegments.value = []
       packetReplayPathSteps.value = []
+      packetReplayPathByFlowKey.clear()
+      clearPacketReplayPathCaches()
       packetReplayFlowResolved.value = false
       resetLiveFlowState()
       packetReplayIndex.value = 0
@@ -1419,12 +1514,14 @@ watch(flowAnimationEnabled, (enabled) => {
   packetReplayFlowAnalysisPending = false
   resetLiveFlowState()
   clearLivePacketAnimationQueues()
-  if (enabled && packetReplayEvents.value.length > 0) {
+  if (enabled && !packetRecordingEnabled.value && packetReplayEvents.value.length > 0) {
     void rebuildPacketReplayFlow(packetReplayEvents.value)
   } else {
     packetReplayFlowPath.value = []
     packetReplayFlowSegments.value = []
     packetReplayPathSteps.value = []
+    packetReplayPathByFlowKey.clear()
+    clearPacketReplayPathCaches()
     packetReplayFlowResolved.value = false
   }
   refreshDisplayGraph()
@@ -1440,6 +1537,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  cancelHoverCardClose()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   packetFlowWorker.terminate()
   packetRecordingEnabled.value = false
@@ -1492,6 +1590,8 @@ onMounted(async () => {
       :node="hoveredNode"
       :position="hoverPosition"
       actions-enabled
+      @pointerenter="cancelHoverCardClose"
+      @pointerleave="onHoverCardLeave"
       @refresh="loadDockerTopology"
       @launch-console="launchContainerConsole"
     />
@@ -1531,8 +1631,9 @@ onMounted(async () => {
       :traffic-capture-active="trafficCaptureActive"
       :traffic-recording-enabled="packetRecordingEnabled"
       :traffic-packet-count="packetReplayStepCount"
-      :traffic-playback-enabled="packetReplayPlaying"
-      :traffic-playback-paused="!packetReplayPlaying"
+      :traffic-playback-enabled="packetReplayPlaying || packetReplayPaused"
+      :traffic-playback-paused="packetReplayPaused"
+      :traffic-playback-preparing="packetReplayPreparing"
       @refresh="reloadDockerTopology"
       @clear-topology-filters="clearTopologyFilters"
       @apply-search="applySearch"

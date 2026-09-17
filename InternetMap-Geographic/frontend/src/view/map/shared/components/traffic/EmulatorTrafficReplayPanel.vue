@@ -16,7 +16,7 @@
       <el-input
         v-model="filterInput"
         size="small"
-        placeholder="tcpdump-like filter, e.g. icmp"
+        placeholder="e.g. icmp or udp"
         :disabled="filterControlsDisabled"
         clearable
         @keyup.enter="$emit('submitFilter')"

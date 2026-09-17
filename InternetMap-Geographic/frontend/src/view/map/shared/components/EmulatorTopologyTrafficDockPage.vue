@@ -64,6 +64,7 @@
       :seek-position="seekPosition"
       :playback-enabled="playbackEnabled"
       :playback-paused="playbackPaused"
+      :playback-preparing="playbackPreparing"
       @submit-filter="$emit('submitFilter')"
       @toggle-recording="$emit('toggleRecording')"
       @toggle-playback="$emit('togglePlayback')"
@@ -98,6 +99,7 @@ withDefaults(defineProps<{
   seekPosition: number
   playbackEnabled: boolean
   playbackPaused: boolean
+  playbackPreparing?: boolean
   importedFileName?: string
   importStatusText?: string
   importError?: string

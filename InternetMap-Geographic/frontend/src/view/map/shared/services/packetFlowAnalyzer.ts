@@ -30,17 +30,21 @@ export type PacketFlowAnalysis = {
 export type PacketFlowAnalysisOptions = {
   appendDestinationEndpoint?: boolean
   topologyEdges?: Array<{ from: string; to: string }>
+  compactObservations?: boolean
 }
 
 export function analyzePacketFlow(
   events: EmulatorTopologyPacketReplayEvent[],
   options: PacketFlowAnalysisOptions = {},
 ): PacketFlowAnalysis {
+  const analysisEvents = options.compactObservations
+    ? compactPacketFlowObservations(events)
+    : events
   if (options.topologyEdges?.length) {
-    return analyzePacketFlowOnTopology(events, options.topologyEdges)
+    return analyzePacketFlowOnTopology(analysisEvents, options.topologyEdges)
   }
   const appendDestinationEndpoint = options.appendDestinationEndpoint ?? true
-  const sortedEvents = sortPacketReplayEvents(events)
+  const sortedEvents = sortPacketReplayEvents(analysisEvents)
   const nodePath: string[] = []
   const pathEvents: EmulatorTopologyPacketReplayEvent[] = []
   const pathSteps: PacketFlowPathStep[] = []
@@ -100,6 +104,27 @@ export function analyzePacketFlow(
     pathSteps,
     hops,
   }
+}
+
+function compactPacketFlowObservations(events: EmulatorTopologyPacketReplayEvent[]) {
+  const observations = new Map<string, EmulatorTopologyPacketReplayEvent>()
+  events.forEach((event) => {
+    const key = [
+      getPacketFlowKey(event),
+      makeObservationPart(event.containerId, event.containerName, event.nodeName, event.nodeIp, event.nodeLabel),
+      makeObservationPart(event.networkId, event.networkName, event.networkLabel, event.ifName),
+      event.packetRole,
+    ].map((value) => String(value ?? '')).join('|')
+    if (!observations.has(key)) observations.set(key, event)
+  })
+  return [...observations.values()]
+}
+
+function makeObservationPart(...values: Array<string | number | undefined>) {
+  return values
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+    .join('/')
 }
 
 function analyzePacketFlowOnTopology(

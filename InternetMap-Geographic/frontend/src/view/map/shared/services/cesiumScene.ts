@@ -1189,20 +1189,28 @@ export function createMap3DScene(container: HTMLElement, options: Map3DSceneOpti
       return
     }
 
-    clearFlashNode(nodeId)
     const position = renderedNodePositions.get(nodeId)
     if (!position) return
 
-    const point = flashPoints.add({
-      position,
-      pixelSize: 28,
-      color: HIGHLIGHT_COLOR.withAlpha(0.82),
-      outlineColor: HIGHLIGHT_OUTLINE_COLOR,
-      outlineWidth: 4,
-      eyeOffset: getNodeEyeOffset(lastPointScale),
-      scaleByDistance: new NearFarScalar(1_500_000, 1.25, 18_000_000, 0.52),
-    })
-    flashPointByNodeId.set(nodeId, point)
+    const existingTimerId = flashTimerIds.get(nodeId)
+    if (existingTimerId !== undefined) window.clearTimeout(existingTimerId)
+    let point = flashPointByNodeId.get(nodeId)
+    if (point) {
+      point.position = position
+      point.pixelSize = 28
+      point.eyeOffset = getNodeEyeOffset(lastPointScale)
+    } else {
+      point = flashPoints.add({
+        position,
+        pixelSize: 28,
+        color: HIGHLIGHT_COLOR.withAlpha(0.82),
+        outlineColor: HIGHLIGHT_OUTLINE_COLOR,
+        outlineWidth: 4,
+        eyeOffset: getNodeEyeOffset(lastPointScale),
+        scaleByDistance: new NearFarScalar(1_500_000, 1.25, 18_000_000, 0.52),
+      })
+      flashPointByNodeId.set(nodeId, point)
+    }
     viewer.scene.requestRender()
 
     const timerId = window.setTimeout(() => {
