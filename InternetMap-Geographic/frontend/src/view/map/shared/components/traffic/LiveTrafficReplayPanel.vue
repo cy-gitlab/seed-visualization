@@ -229,7 +229,9 @@
       <em>{{ seekPosition }} / {{ packetCount.toLocaleString() }}</em>
     </label>
 
-    <p>{{ rangeLabel }}</p>
+    <p :class="{ 'emulator-traffic-replay-calculating': playbackPreparing }">
+      {{ rangeLabel }}
+    </p>
   </div>
 </template>
 
@@ -258,6 +260,7 @@ const props = defineProps<{
   playbackEnabled: boolean
   playbackPaused: boolean
   playbackPreparing?: boolean
+  playbackStatusText?: string
 }>()
 
 const filterInput = defineModel<string>('filterInput', { required: true })
@@ -280,6 +283,9 @@ const emit = defineEmits<{
 }>()
 
 const rangeLabel = computed(() => {
+  if (props.playbackPreparing) {
+    return props.playbackStatusText || 'Calculating packet flow paths...'
+  }
   if (props.recordingEnabled) {
     return `Recording live packets: ${props.packetCount.toLocaleString()} captured.`
   }

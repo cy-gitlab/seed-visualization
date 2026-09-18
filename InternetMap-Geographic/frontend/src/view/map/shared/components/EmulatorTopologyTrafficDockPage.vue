@@ -65,6 +65,7 @@
       :playback-enabled="playbackEnabled"
       :playback-paused="playbackPaused"
       :playback-preparing="playbackPreparing"
+      :playback-status-text="playbackStatusText"
       @submit-filter="$emit('submitFilter')"
       @toggle-recording="$emit('toggleRecording')"
       @toggle-playback="$emit('togglePlayback')"
@@ -100,6 +101,7 @@ withDefaults(defineProps<{
   playbackEnabled: boolean
   playbackPaused: boolean
   playbackPreparing?: boolean
+  playbackStatusText?: string
   importedFileName?: string
   importStatusText?: string
   importError?: string

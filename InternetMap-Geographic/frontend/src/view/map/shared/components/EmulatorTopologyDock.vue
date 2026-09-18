@@ -91,6 +91,7 @@
         :playback-enabled="trafficPlaybackEnabled"
         :playback-paused="trafficPlaybackPaused"
         :playback-preparing="trafficPlaybackPreparing"
+        :playback-status-text="trafficPlaybackStatusText"
         :imported-file-name="trafficImportedFileName"
         :import-status-text="trafficImportStatusText"
         :import-error="trafficImportError"
@@ -177,6 +178,7 @@ defineProps<{
   trafficPlaybackEnabled: boolean
   trafficPlaybackPaused: boolean
   trafficPlaybackPreparing?: boolean
+  trafficPlaybackStatusText?: string
   trafficImportedFileName?: string
   trafficImportStatusText?: string
   trafficImportError?: string

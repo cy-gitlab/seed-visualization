@@ -180,7 +180,7 @@ worker_command() {
   delay="$(awk -v ms="$INTERVAL_MS" 'BEGIN { printf "%.3f", ms / 1000 }')"
   case "$protocol" in
     icmp)
-      printf 'end=$(( $(date +%%s) + %s )); while [ "$(date +%%s)" -lt "$end" ]; do ping -q -c 1 -W 1 %q >/dev/null 2>&1 || true; sleep %s; done' "$DURATION" "$target_ip" "$delay"
+      printf 'exec ping -q -i %s -w %s %q' "$delay" "$DURATION" "$target_ip"
       ;;
     tcp)
       printf 'end=$(( $(date +%%s) + %s )); while [ "$(date +%%s)" -lt "$end" ]; do dd if=/dev/zero bs=%s count=1 2>/dev/null | nc -w 1 %q %s >/dev/null 2>&1 || true; sleep %s; done' "$DURATION" "$PAYLOAD_BYTES" "$target_ip" "$TCP_PORT" "$delay"

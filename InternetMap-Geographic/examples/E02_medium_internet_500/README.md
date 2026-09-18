@@ -126,7 +126,7 @@ chmod +x scripts/traffic_stress.sh scripts/run_pressure_suite.sh
   --protocol <icmp|tcp|udp|mixed> \
   --concurrency <不同跨网段Host对的流数量> \
   --duration <秒> \
-  --interval-ms <每个进程两次发送间隔> \
+  --interval-ms <每条流的发送间隔> \
   --payload-bytes <TCP或UDP负载字节数>
 ```
 
@@ -134,7 +134,7 @@ chmod +x scripts/traffic_stress.sh scripts/run_pressure_suite.sh
 
 | 协议 | 生成方式 | 主要压力维度 |
 | --- | --- | --- |
-| ICMP | 每个工作进程循环执行单次 ping | 包速率、并发端点事件 |
+| ICMP | 每条流运行一个持续 `ping`，使用 `-i` 控制间隔、`-w` 控制时长 | 包速率、并发端点事件 |
 | TCP | 每次发送新建一次 `nc` 连接 | 新流速率、连接并发、路径动画 |
 | UDP | 每次通过 `nc -u` 发送一个负载 | 包速率、无连接流量处理 |
 | mixed | 工作进程按 ICMP/TCP/UDP 轮换 | 协议混合与页面综合处理 |
@@ -266,7 +266,7 @@ traffic_stress.sh run --protocol mixed concurrency=96 interval=20 payload=2048
           5. 取消 ”Packet path links only“，勾选 ”Flow animation“，再执行`2`中的命令，观察动画（方向、路径）
           6. 同时勾选以上两个选项，再执行`2`中的命令，观察动画（方向、路径）
           7. 录制。点击`Record`，开始记录抓到的数据包（数量上限10w，达到上限会自动停止）
-          8. 回放。点击`Paly replay`，开始回放，支持上一步、下一步、暂停、停止、清空，回放有 `Interval、Timeline`两种模式，也支持 ”Packet path links only“ 和 ”Flow animation“
+          8. 回放。点击`Play replay`，开始回放，支持上一步、下一步、暂停、停止、清空，回放有 `Interval、Timeline`两种模式，也支持 ”Packet path links only“ 和 ”Flow animation“
         2. tcp、udp 方法类同
 
 2. 并发流量
@@ -276,15 +276,17 @@ traffic_stress.sh run --protocol mixed concurrency=96 interval=20 payload=2048
       # 三条流 filter: icmp
       ./scripts/traffic_stress.sh run --protocol icmp --concurrency 3 --duration 3600 --interval-ms 10
       # 760条 filter: icmp
-      ./traffic_stress.sh run --protocol icmp --concurrency 760 --duration 3600 --interval-ms 10 --payload-bytes 1400
+      ./scripts/traffic_stress.sh run --protocol icmp --concurrency 760 --duration 3600 --interval-ms 10 --payload-bytes 1400
       # 760条 filter: icmp or udp
-      ./traffic_stress.sh run --protocol mixed --concurrency 760 --duration 3600 --interval-ms 10 --payload-bytes 1400
+      ./scripts/traffic_stress.sh run --protocol mixed --concurrency 760 --duration 3600 --interval-ms 10 --payload-bytes 1400
       # 760条 filter: icmp or udp or tcp，由于仿真器本就有tcp的数据包在传输，tcp 抓包可能会存在与脚本不符的情况
-      ./traffic_stress.sh run --protocol mixed --concurrency 760 --duration 3600 --interval-ms 10 --payload-bytes 1400
+      ./scripts/traffic_stress.sh run --protocol mixed --concurrency 760 --duration 3600 --interval-ms 10 --payload-bytes 1400
     ```
 3. 压力测试
   在 `2. 并发流量` 测试时，记录10w数据包，收包期间缩放、筛选、切换面板、暂停和跳转回放。
-  记录的数据包过多时，勾选`Flow animation`的情况下，开始播放，由于需要计算数据包的路径，可能会等待数秒（开始播放按钮显示loading...）
+  记录的数据包过多时，如果已勾选 `Flow animation` 再开始播放，播放按钮会显示 loading，Packet 轴下方会以红色粗体提示正在计算流向，计算完成后开始播放。回放过程中勾选 `Flow animation` 时，会暂停在当前位置并显示相同提示，计算完成后继续播放。空闲状态下仅勾选该选项不会立即计算。
+
+  Timeline 的正数时间窗口会预先把录制报文分批；同一批按同一时刻显示，Packet 轴按该批实际报文数量推进。当前批与下一批的等待时间使用“当前批最后一包到下一批第一包”的时间差，并除以 Timeline speed。
 
 4. 耐久与恢复
   持续运行后断线重连、停止发包、清空记录，再次开始。如 重启 seedmu_traffic_observer_service 容器等

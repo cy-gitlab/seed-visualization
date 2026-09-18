@@ -122,6 +122,8 @@ wc -l scripts/pingable_pairs.txt
   --interval-ms 1000
 ```
 
+ICMP 每条流只启动一个持续运行的 `ping` 进程，`--interval-ms` 对应 `ping -i` 的发送间隔，`--duration` 对应 `ping -w` 的总运行时间。脚本使用实际 `ping` 进程 PID，因此 `./scripts/traffic_stress.sh stop` 仍可提前终止。
+
 混合并发流量：
 
 ```bash
