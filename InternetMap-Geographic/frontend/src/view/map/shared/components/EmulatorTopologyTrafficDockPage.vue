@@ -33,6 +33,8 @@
       :seek-position="seekPosition"
       :playback-enabled="playbackEnabled"
       :playback-paused="playbackPaused"
+      :playback-preparing="playbackPreparing"
+      :playback-status-text="playbackStatusText"
       :imported-file-name="importedFileName"
       :import-status-text="importStatusText"
       :import-error="importError"
