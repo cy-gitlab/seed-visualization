@@ -30,11 +30,7 @@
 | Docker | Docker Engine + Compose v2 | 使用较新的稳定版本 |
 | Python | 3.10 或以上 | 与 SEED Emulator 环境一致 |
 
-实时抓包还要求主机支持 eBPF、挂载 debugfs/BPF 文件系统，并允许 `seedmu_traffic_observer_service` 以特权和 host 网络模式运行。测试前提高文件描述符上限：
-
-```bash
-ulimit -n 1048576
-```
+实时抓包还要求主机支持 eBPF、挂载 debugfs/BPF 文件系统，并允许 `seedmu_traffic_observer_service` 以特权和 host 网络模式运行。
 
 辅助脚本依赖 Bash、Docker CLI，以及节点基础镜像中自带的 `ping`、`nc`、`dd`。脚本不向容器安装额外软件。
 
@@ -237,10 +233,64 @@ traffic_stress.sh run --protocol icmp concurrency=32 interval=20 payload=64
 traffic_stress.sh run --protocol tcp concurrency=64 interval=25 payload=4096
 traffic_stress.sh run --protocol udp concurrency=64 interval=10 payload=1400
 traffic_stress.sh run --protocol mixed concurrency=96 interval=20 payload=2048
+
 ```
 
+## 9. 测试步骤
 
-## 9. 清理
+0. 构建并启动仿真器
+  参考步骤2. 生成并启动拓扑
+  访问：
+  - 3D：`http://<主机IP>:8090/pro/map/3d`
+  - 2D：`http://<主机IP>:8090/pro/map/2d`
+
+1. 基本功能验证
+    1. 观察拓扑显示、拖动缩放等是否正常，
+    2. OverView 面板
+      点击AS或IX，可选择对应的选项，确认提交后，拓扑会发生变化，只显示对应的AS或IX及其相关的节点
+    3. Settings 面板
+      - 根据关键词搜索节点
+      - 选择要显示的节点类型，取消”Network“的同时，连线会隐藏
+      - 拖动轴，会改变节点的大小和连线的宽度
+      - ”Node Labels“ 控制节点的`Label`显示
+      - ”Node details“ 控制鼠标悬浮在节点上时显示节点详情
+    4. Traffic Replay 面板
+        1. 测试ICMP 
+          1. 在右下角的 Traffic Replay 面板中设置 filter 为 `icmp`
+          2. 执行命令
+            ```bash
+            ./scripts/traffic_stress.sh run --protocol icmp --concurrency 1 --duration 10 --interval-ms 1000
+            ```
+          3. 观察闪烁的节点，闪烁的频率和次数（1秒闪烁依次，共10次）
+          4. 勾选 ”Packet path links only“，再执行`2`中的命令，观察显示的路径是否正确
+          5. 取消 ”Packet path links only“，勾选 ”Flow animation“，再执行`2`中的命令，观察动画（方向、路径）
+          6. 同时勾选以上两个选项，再执行`2`中的命令，观察动画（方向、路径）
+          7. 录制。点击`Record`，开始记录抓到的数据包（数量上限10w，达到上限会自动停止）
+          8. 回放。点击`Paly replay`，开始回放，支持上一步、下一步、暂停、停止、清空，回放有 `Interval、Timeline`两种模式，也支持 ”Packet path links only“ 和 ”Flow animation“
+        2. tcp、udp 方法类同
+
+2. 并发流量
+    1. 步骤参考上述的`1. 测试ICMP `，执行的命令和设置的filter略有不同
+    2. 如下:
+    ```bash
+      # 三条流 filter: icmp
+      ./scripts/traffic_stress.sh run --protocol icmp --concurrency 3 --duration 3600 --interval-ms 10
+      # 760条 filter: icmp
+      ./traffic_stress.sh run --protocol icmp --concurrency 760 --duration 3600 --interval-ms 10 --payload-bytes 1400
+      # 760条 filter: icmp or udp
+      ./traffic_stress.sh run --protocol mixed --concurrency 760 --duration 3600 --interval-ms 10 --payload-bytes 1400
+      # 760条 filter: icmp or udp or tcp，由于仿真器本就有tcp的数据包在传输，tcp 抓包可能会存在与脚本不符的情况
+      ./traffic_stress.sh run --protocol mixed --concurrency 760 --duration 3600 --interval-ms 10 --payload-bytes 1400
+    ```
+3. 压力测试
+  在 `2. 并发流量` 测试时，记录10w数据包，收包期间缩放、筛选、切换面板、暂停和跳转回放。
+  记录的数据包过多时，勾选`Flow animation`的情况下，开始播放，由于需要计算数据包的路径，可能会等待数秒（开始播放按钮显示loading...）
+
+4. 耐久与恢复
+  持续运行后断线重连、停止发包、清空记录，再次开始。如 重启 seedmu_traffic_observer_service 容器等
+  
+
+## 10. 清理
 
 先停止脚本产生的进程：
 

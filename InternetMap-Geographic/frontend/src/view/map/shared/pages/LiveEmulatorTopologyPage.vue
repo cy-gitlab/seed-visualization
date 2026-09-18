@@ -739,18 +739,20 @@ function playNextPacketReplayWindow() {
   const startIndex = Math.max(0, packetReplayIndex.value)
   const startMs = getPacketTimestampMs(events[startIndex]!)
   const endMs = startMs + windowMs
-  let nextIndex = startIndex
+  let nextIndex = findTimelineWindowEndIndex(events, startIndex, endMs)
   const visualIndexes = new Map<string, number>()
 
-  while (nextIndex < events.length && getPacketTimestampMs(events[nextIndex]!) <= endMs) {
-    if (
-      nextIndex - startIndex < MAX_TIMELINE_VISUAL_SCAN_PER_WINDOW &&
-      visualIndexes.size < MAX_TIMELINE_VISUALS_PER_WINDOW
-    ) {
-      const event = events[nextIndex]!
-      visualIndexes.set(getReplayAnalysisObservationKey(event), nextIndex)
-    }
-    nextIndex += 1
+  const visualScanEndIndex = Math.min(
+    nextIndex,
+    startIndex + MAX_TIMELINE_VISUAL_SCAN_PER_WINDOW,
+  )
+  for (
+    let visualIndex = startIndex;
+    visualIndex < visualScanEndIndex && visualIndexes.size < MAX_TIMELINE_VISUALS_PER_WINDOW;
+    visualIndex += 1
+  ) {
+    const event = events[visualIndex]!
+    visualIndexes.set(getReplayAnalysisObservationKey(event), visualIndex)
   }
   if (nextIndex === startIndex) {
     const event = events[nextIndex]!
@@ -776,10 +778,28 @@ function playNextPacketReplayWindow() {
     Math.max(
       MIN_REPLAY_TIMER_DELAY_MS,
       nextIndex < events.length
-        ? (nextWindowStartMs - startMs) / safeSpeed
+        ? (nextWindowStartMs - currentWindowEndMs) / safeSpeed
         : windowVisualDurationMs,
     ),
   )
+}
+
+function findTimelineWindowEndIndex(
+  events: EmulatorTopologyPacketReplayEvent[],
+  startIndex: number,
+  endMs: number,
+) {
+  let low = startIndex
+  let high = events.length
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2)
+    if (getPacketTimestampMs(events[middle]!) <= endMs) {
+      low = middle + 1
+    } else {
+      high = middle
+    }
+  }
+  return low
 }
 
 function playLivePacketAnimation(event: EmulatorTopologyPacketReplayEvent) {
@@ -1007,7 +1027,14 @@ function getExistingLinkPath(nodeIds: Array<string | undefined>) {
 function getCapturedPacketNodePath(event: EmulatorTopologyPacketReplayEvent) {
   const containerNodeId = resolveGraphNodeId(event.containerId, event.containerName, event.nodeName, event.nodeIp, event.nodeLabel)
   const networkNodeId = resolveGraphNodeId(event.networkId, event.networkName, event.networkLabel)
-  return uniquePathNodes([containerNodeId, networkNodeId].filter(Boolean) as string[])
+  const destNodeId = resolveGraphNodeId(
+    event.destContainerId,
+    event.destContainerName,
+    event.destNodeName,
+    event.destNodeIp,
+    event.destIp,
+  )
+  return uniquePathNodes([containerNodeId, networkNodeId, destNodeId].filter(Boolean) as string[])
 }
 
 function shouldSkipLivePacketAnimation(event: EmulatorTopologyPacketReplayEvent) {
