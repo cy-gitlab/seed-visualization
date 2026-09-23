@@ -1,32 +1,32 @@
 name: CI Docker Lifecycle Probes
 
 on:
-  # pull_request:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - "emulator-service/**"
-  #     - "InternetMap-Toplogy/**"
-  #     - "InternetMap-Geographic/**"
-  #     - "InternetMap-Satellite/**"
-  #     - "satellite-emulator-service/**"
-  #     - "traffic-observer-service/**"
-  #     - "docker-compose.yml"
-  #     - "ci/**"
-  #     - ".github/workflows/ci-docker-lifecycle.yaml"
-  # push:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - "emulator-service/**"
-  #     - "InternetMap-Toplogy/**"
-  #     - "InternetMap-Geographic/**"
-  #     - "InternetMap-Satellite/**"
-  #     - "satellite-emulator-service/**"
-  #     - "traffic-observer-service/**"
-  #     - "docker-compose.yml"
-  #     - "ci/**"
-  #     - ".github/workflows/ci-docker-lifecycle.yaml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "emulator-service/**"
+      - "InternetMap-Toplogy/**"
+      - "InternetMap-Geographic/**"
+      - "InternetMap-Satellite/**"
+      - "satellite-emulator-service/**"
+      - "traffic-observer-service/**"
+      - "docker-compose.yml"
+      - "ci/**"
+      - ".github/workflows/ci-docker-lifecycle.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "emulator-service/**"
+      - "InternetMap-Toplogy/**"
+      - "InternetMap-Geographic/**"
+      - "InternetMap-Satellite/**"
+      - "satellite-emulator-service/**"
+      - "traffic-observer-service/**"
+      - "docker-compose.yml"
+      - "ci/**"
+      - ".github/workflows/ci-docker-lifecycle.yaml"
   workflow_call: {}
   workflow_dispatch: {}
 
